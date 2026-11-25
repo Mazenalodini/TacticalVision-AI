@@ -2,18 +2,19 @@ import { FramePlayer } from "@/lib/types";
 import { FIFA_PITCH, PitchViewport, pitchToCanvas } from "./pitchConfig";
 
 /**
- * Zero-allocation 60FPS Voronoi pitch control renderer.
+ * Zero-allocation 60FPS High-Resolution Voronoi Pitch Control Renderer.
  *
- * Uses ONE persistent offscreen canvas (105x68) and ONE persistent ImageData(105, 68).
- * Computes nearest active player per 1m^2 cell using squared Euclidean distance (dx*dx + dy*dy, no Math.sqrt).
- * Scales smoothly onto the main pitch canvas using imageSmoothingEnabled = true.
+ * Uses a persistent 210x136 offscreen canvas (0.5m resolution) and traces
+ * crisp Second-Spectrum-style Voronoi frontier seams between Team A (#38BDF8)
+ * and Team B (#FB7185) over Night-Emerald Slate turf with zero muddy mixing.
  */
 export class VoronoiBuffer {
   private offscreen: HTMLCanvasElement;
   private offCtx: CanvasRenderingContext2D;
   private imgData: ImageData;
-  private width = 105;
-  private height = 68;
+  private width = 210;
+  private height = 136;
+  private owners: Int8Array;
 
   constructor() {
     this.offscreen = document.createElement("canvas");
@@ -23,6 +24,7 @@ export class VoronoiBuffer {
     if (!ctx) throw new Error("Failed to get 2D context for Voronoi buffer");
     this.offCtx = ctx;
     this.imgData = this.offCtx.createImageData(this.width, this.height);
+    this.owners = new Int8Array(this.width * this.height);
   }
 
   public render(
@@ -32,19 +34,19 @@ export class VoronoiBuffer {
   ) {
     if (!players || players.length < 2) return;
 
-    // Filter players with valid pitch coordinates
     const validPlayers = players.filter(
       (p) =>
-        p.x >= 0 &&
-        p.x <= FIFA_PITCH.length &&
-        p.y >= 0 &&
-        p.y <= FIFA_PITCH.width &&
+        Number.isFinite(p.x) &&
+        Number.isFinite(p.y) &&
+        p.x >= -0.5 &&
+        p.x <= FIFA_PITCH.length + 0.5 &&
+        p.y >= -0.5 &&
+        p.y <= FIFA_PITCH.width + 0.5 &&
         (p.team === 0 || p.team === 1)
     );
 
     if (validPlayers.length < 2) return;
 
-    // Pre-extract arrays for ultra-fast loop
     const n = validPlayers.length;
     const px = new Float32Array(n);
     const py = new Float32Array(n);
@@ -56,14 +58,16 @@ export class VoronoiBuffer {
       pteam[i] = validPlayers[i].team;
     }
 
-    const data = this.imgData.data;
-    let ptr = 0;
+    const w = this.width;
+    const h = this.height;
+    const owners = this.owners;
 
-    // 105 columns x 68 rows (1 cell = 1m x 1m)
-    for (let y = 0; y < 68; y++) {
-      const cellY = y + 0.5;
-      for (let x = 0; x < 105; x++) {
-        const cellX = x + 0.5;
+    // Pass 1: Compute team ownership per 0.5m x 0.5m cell
+    for (let gy = 0; gy < h; gy++) {
+      const cellY = gy * 0.5 + 0.25;
+      const rowOffset = gy * w;
+      for (let gx = 0; gx < w; gx++) {
+        const cellX = gx * 0.5 + 0.25;
 
         let minDistSq = 999999;
         let ownerTeam = -1;
@@ -71,25 +75,46 @@ export class VoronoiBuffer {
         for (let i = 0; i < n; i++) {
           const dx = px[i] - cellX;
           const dy = py[i] - cellY;
-          const distSq = dx * dx + dy * dy; // squared Euclidean — zero Math.sqrt!
+          const distSq = dx * dx + dy * dy;
           if (distSq < minDistSq) {
             minDistSq = distSq;
             ownerTeam = pteam[i];
           }
         }
+        owners[rowOffset + gx] = ownerTeam;
+      }
+    }
 
-        if (ownerTeam === 0) {
-          // Team A: Broadcast Sky (#38BDF8)
+    // Pass 2: Shade pure Broadcast Sky / Luminous Rose zones + subtle frontier seam
+    const data = this.imgData.data;
+    let ptr = 0;
+    for (let gy = 0; gy < h; gy++) {
+      const rowOffset = gy * w;
+      for (let gx = 0; gx < w; gx++) {
+        const idx = rowOffset + gx;
+        const owner = owners[idx];
+
+        const isBoundary =
+          (gx + 1 < w && owners[idx + 1] !== owner) ||
+          (gy + 1 < h && owners[idx + w] !== owner);
+
+        if (isBoundary) {
+          data[ptr] = 226;
+          data[ptr + 1] = 240;
+          data[ptr + 2] = 255;
+          data[ptr + 3] = 52;
+        } else if (owner === 0) {
+          // Team A: Pure Broadcast Sky (#38BDF8)
           data[ptr] = 56;
           data[ptr + 1] = 189;
           data[ptr + 2] = 248;
-          data[ptr + 3] = 42;
-        } else if (ownerTeam === 1) {
-          // Team B: Luminous Rose-Coral (#FB7185 — crisp rose, zero muddy brown on turf)
+          data[ptr + 3] = 36;
+        } else if (owner === 1) {
+          // Team B: Pure Luminous Rose (#FB7185)
           data[ptr] = 251;
           data[ptr + 1] = 113;
           data[ptr + 2] = 133;
-          data[ptr + 3] = 44;
+          data[ptr + 3] = 38;
         } else {
           data[ptr + 3] = 0;
         }
@@ -98,10 +123,8 @@ export class VoronoiBuffer {
       }
     }
 
-    // Put image data into offscreen canvas
     this.offCtx.putImageData(this.imgData, 0, 0);
 
-    // Blit smoothly onto target pitch canvas area
     const [originX, originY] = pitchToCanvas(0, 0, vp);
     const [pitchEndX, pitchEndY] = pitchToCanvas(FIFA_PITCH.length, FIFA_PITCH.width, vp);
     const destW = pitchEndX - originX;
@@ -109,7 +132,7 @@ export class VoronoiBuffer {
 
     ctx.save();
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "medium";
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(this.offscreen, originX, originY, destW, destH);
     ctx.restore();
   }

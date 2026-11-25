@@ -1,405 +1,465 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import * as d3 from "d3";
-import { ArrowUpRight, ArrowUpLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  Play,
+  Pause,
+  Grid,
+  Shield,
+  ArrowUpRight,
+  ArrowUpLeft,
+} from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { fetchTelemetry } from "@/lib/api";
-import { resolveMatchDisplay } from "@/lib/format";
-import type { MatchCard, Telemetry, FramePlayer } from "@/lib/types";
+import { resolveMatchDisplay, formatTeamName } from "@/lib/format";
+import type { MatchCard, Telemetry } from "@/lib/types";
+import {
+  stabilizeTelemetry,
+  interpolateStabilizedFrame,
+  findBestHeroWindow,
+  type StabilizedFrame,
+  type StabilizedPlayer,
+} from "@/lib/radarStabilizer";
+import {
+  computePitchViewport,
+  canvasToPitch,
+  pitchToCanvas,
+  type PitchViewport,
+} from "@/components/warroom/canvas/pitchConfig";
+import { drawPitch } from "@/components/warroom/canvas/drawPitch";
+import { VoronoiBuffer } from "@/components/warroom/canvas/drawVoronoi";
+import { drawHulls } from "@/components/warroom/canvas/drawHulls";
+import { drawDefLines } from "@/components/warroom/canvas/drawDefLines";
+import {
+  drawPlayers,
+  type BallHistoryPoint,
+} from "@/components/warroom/canvas/drawPlayers";
 import { BidiNum } from "@/components/ui/BidiNum";
 
 interface HeroPitchVisualProps {
   featuredMatch?: MatchCard | null;
 }
 
+interface HeroHudState {
+  timeSec: number;
+  frameNum: number;
+  vor0: number;
+  vor1: number;
+  hull0: number;
+  hull1: number;
+  progressPct: number;
+}
+
 /**
- * 100% Real-Data Match Snapshot Preview for Match Hub Hero.
- * Fetches actual `telemetry.json` of `featuredMatch` (zero hardcoded coordinates or fake xT)
- * and renders a real synchronized tactical frame (players, ball, convex hull, def lines, Voronoi split).
+ * Alive 60FPS Real-Data Broadcast Centerpiece for the Match Hub Hero.
+ * Loads real `telemetry.json` from `featuredMatch`, stabilizes the tracking/homography signal,
+ * selects the cleanest high-tempo 7s tactical sequence, and animates a silky 60FPS loop
+ * with live hover inspection, Voronoi/Hull toggles, and real-time HUD readouts.
  */
 export function HeroPitchVisual({ featuredMatch }: HeroPitchVisualProps) {
   const { t, lang, isRTL } = useLang();
+  const router = useRouter();
+
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<FramePlayer | null>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [showVoronoi, setShowVoronoi] = useState(true);
+  const [showHulls, setShowHulls] = useState(true);
+  const [hoveredInfo, setHoveredInfo] = useState<{
+    player: StabilizedPlayer;
+    leftPct: number;
+    topPct: number;
+  } | null>(null);
+  const [hud, setHud] = useState<HeroHudState>({
+    timeSec: 0,
+    frameNum: 0,
+    vor0: 50,
+    vor1: 50,
+    hull0: 0,
+    hull1: 0,
+    progressPct: 0,
+  });
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const voronoiRef = useRef<VoronoiBuffer | null>(null);
+  const viewportRef = useRef<PitchViewport | null>(null);
+  const lastInterpRef = useRef<StabilizedFrame | null>(null);
+
+  const playheadRef = useRef<number>(0);
+  const lastRafTsRef = useRef<number | null>(null);
+  const lastHudTsRef = useRef<number>(0);
+  const hoveredIdRef = useRef<number | null>(null);
+
+  const targetMatchId = featuredMatch?.id || "match_01_counter";
 
   useEffect(() => {
-    const targetId = featuredMatch?.id;
-    if (!targetId) return;
-
     let cancelled = false;
-    fetchTelemetry(targetId)
+    fetchTelemetry(targetMatchId)
       .then((data) => {
-        if (!cancelled) {
-          setTelemetry(data);
-        }
+        if (!cancelled) setTelemetry(data);
       })
       .catch(() => {
-        // Silent fallback when backend is offline
+        // Silent fallback if backend unavailable
       });
-
     return () => {
       cancelled = true;
     };
-  }, [featuredMatch?.id]);
+  }, [targetMatchId]);
 
-  // Pick a genuine informative frame (around 15%-75% into clip, maximizing players + ball + def_x)
-  const snapshotFrame = useMemo(() => {
-    const frames = telemetry?.frames;
-    if (!frames || frames.length === 0) return null;
+  const stabilized = useMemo(() => stabilizeTelemetry(telemetry), [telemetry]);
+  const heroWindow = useMemo(
+    () => findBestHeroWindow(stabilized, 175),
+    [stabilized]
+  );
 
-    const startIdx = Math.floor(frames.length * 0.15);
-    const endIdx = Math.max(startIdx + 1, Math.floor(frames.length * 0.8));
+  // Reset playhead whenever hero window changes
+  useEffect(() => {
+    playheadRef.current = heroWindow.startFrame;
+    lastRafTsRef.current = null;
+  }, [heroWindow]);
 
-    let best = frames[startIdx] || frames[0];
-    let bestScore = -1;
-
-    for (let i = startIdx; i < endIdx; i++) {
-      const fr = frames[i];
-      const defCount = Object.keys(fr.def_x || {}).length;
-      const score =
-        (fr.players?.length || 0) + (fr.ball ? 5 : 0) + defCount * 3;
-      if (score > bestScore) {
-        bestScore = score;
-        best = fr;
-      }
+  useEffect(() => {
+    if (!voronoiRef.current) {
+      voronoiRef.current = new VoronoiBuffer();
     }
-    return best;
-  }, [telemetry]);
+  }, []);
 
-  const pad = 16;
-  const pitchW = 420;
-  const pitchH = 272;
-  const vbW = pitchW + pad * 2;
-  const vbH = pitchH + pad * 2;
+  // ResizeObserver for razor-sharp HiDPI canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
-  const scaleX = useMemo(
-    () => d3.scaleLinear().domain([0, 105]).range([pad, pad + pitchW]),
-    []
-  );
-  const scaleY = useMemo(
-    () => d3.scaleLinear().domain([0, 68]).range([pad, pad + pitchH]),
-    []
-  );
-
-  // Real outfield Convex Hulls computed directly from snapshotFrame.players
-  const { hull0Path, hull1Path } = useMemo(() => {
-    if (!snapshotFrame?.players) return { hull0Path: "", hull1Path: "" };
-
-    const buildHull = (teamNum: 0 | 1) => {
-      const pts: [number, number][] = snapshotFrame.players
-        .filter(
-          (p) =>
-            p.team === teamNum &&
-            p.role === "p" &&
-            p.x >= -2 &&
-            p.x <= 107 &&
-            p.y >= -2 &&
-            p.y <= 70
-        )
-        .map((p) => [
-          scaleX(Math.max(0, Math.min(105, p.x))),
-          scaleY(Math.max(0, Math.min(68, p.y))),
-        ]);
-      if (pts.length < 3) return "";
-      const hull = d3.polygonHull(pts);
-      if (!hull) return "";
-      return `M ${hull
-        .map((pt) => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`)
-        .join(" L ")} Z`;
+    const handleResize = () => {
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
     };
 
-    return { hull0Path: buildHull(0), hull1Path: buildHull(1) };
-  }, [snapshotFrame, scaleX, scaleY]);
+    handleResize();
+    const ro = new ResizeObserver(handleResize);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
-  // Exact matching Voronoi percentages (always sum to 100%)
-  const vor0Pct = Math.round(
-    snapshotFrame?.vor?.[0] ?? featuredMatch?.pitch_control_pct?.team_0 ?? 50
+  // ── 60FPS Real-Telemetry Continuous Broadcast Loop ──
+  useEffect(() => {
+    let rafId: number;
+
+    const loop = (ts: number) => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+
+      if (canvas && ctx && stabilized && stabilized.frames.length > 0) {
+        const span = Math.max(1, heroWindow.endFrame - heroWindow.startFrame);
+
+        if (isPlaying && lastRafTsRef.current !== null) {
+          const dtSec = Math.min(0.1, (ts - lastRafTsRef.current) / 1000);
+          // 0.85x broadcast tempo for calm, legible tactical motion
+          const advanceFrames = dtSec * stabilized.fps * 0.85;
+          playheadRef.current += advanceFrames;
+          if (playheadRef.current > heroWindow.endFrame) {
+            playheadRef.current = heroWindow.startFrame;
+          }
+        }
+        lastRafTsRef.current = ts;
+
+        const exactFrame = Math.max(
+          heroWindow.startFrame,
+          Math.min(heroWindow.endFrame, playheadRef.current)
+        );
+        const f0 = Math.floor(exactFrame);
+        const interpFrame = interpolateStabilizedFrame(stabilized, exactFrame);
+
+        if (interpFrame) {
+          lastInterpRef.current = interpFrame;
+
+          // Subtle 220ms loop wrap breath fade at edges
+          const distFromStart = exactFrame - heroWindow.startFrame;
+          const distToEnd = heroWindow.endFrame - exactFrame;
+          let fadeAlpha = 1.0;
+          if (distFromStart < 6) fadeAlpha = Math.max(0.35, distFromStart / 6);
+          else if (distToEnd < 6) fadeAlpha = Math.max(0.35, distToEnd / 6);
+
+          // Real ball tail slice
+          const ballTrail: BallHistoryPoint[] = [];
+          const tailStart = Math.max(heroWindow.startFrame, f0 - 16);
+          for (let i = tailStart; i <= f0; i++) {
+            const bf = stabilized.frames[i];
+            if (bf?.ball) {
+              ballTrail.push({ x: bf.ball[0], y: bf.ball[1], frame: bf.f });
+            }
+          }
+          if (interpFrame.ball) {
+            ballTrail.push({
+              x: interpFrame.ball[0],
+              y: interpFrame.ball[1],
+              frame: interpFrame.f,
+            });
+          }
+
+          const rect = canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          const vp = computePitchViewport(rect.width, rect.height, 0.042);
+          viewportRef.current = vp;
+
+          ctx.save();
+          ctx.scale(dpr, dpr);
+
+          drawPitch(ctx, vp);
+
+          ctx.save();
+          ctx.globalAlpha = fadeAlpha;
+
+          if (showVoronoi && voronoiRef.current) {
+            voronoiRef.current.render(ctx, interpFrame.players, vp);
+          }
+
+          if (showHulls) {
+            drawHulls(ctx, interpFrame.players, vp);
+          }
+
+          drawDefLines(ctx, interpFrame.def_x, vp);
+
+          drawPlayers(
+            ctx,
+            interpFrame.players,
+            interpFrame.ball,
+            ballTrail,
+            null,
+            undefined,
+            interpFrame.f,
+            vp,
+            hoveredIdRef.current
+          );
+
+          ctx.restore();
+          ctx.restore();
+
+          // Update React HUD readouts smoothly at ~12Hz to avoid heavy re-renders
+          if (ts - lastHudTsRef.current >= 80) {
+            lastHudTsRef.current = ts;
+            setHud({
+              timeSec: interpFrame.t,
+              frameNum: interpFrame.f,
+              vor0: Math.round(interpFrame.vor[0]),
+              vor1: 100 - Math.round(interpFrame.vor[0]),
+              hull0: interpFrame.hullArea.team0_m2,
+              hull1: interpFrame.hullArea.team1_m2,
+              progressPct: Math.min(
+                100,
+                Math.max(0, ((exactFrame - heroWindow.startFrame) / span) * 100)
+              ),
+            });
+
+            if (hoveredIdRef.current !== null) {
+              const hp = interpFrame.players.find((p) => p.id === hoveredIdRef.current);
+              if (hp && vp.width > 0 && vp.height > 0) {
+                const [px, py] = pitchToCanvas(hp.x, hp.y, vp);
+                setHoveredInfo({
+                  player: hp,
+                  leftPct: Math.max(12, Math.min(88, (px / vp.width) * 100)),
+                  topPct: Math.max(14, Math.min(82, (py / vp.height) * 100)),
+                });
+              } else {
+                hoveredIdRef.current = null;
+                setHoveredInfo(null);
+              }
+            }
+          }
+        }
+      }
+
+      rafId = window.requestAnimationFrame(loop);
+    };
+
+    rafId = window.requestAnimationFrame(loop);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [stabilized, heroWindow, isPlaying, showVoronoi, showHulls]);
+
+  const handleCanvasMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      const vp = viewportRef.current;
+      const fr = lastInterpRef.current;
+      if (!canvas || !vp || !fr) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const [mx, my] = canvasToPitch(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        vp
+      );
+
+      let closest: StabilizedPlayer | null = null;
+      let minDist = 4.0;
+      for (const p of fr.players) {
+        const d = Math.hypot(p.x - mx, p.y - my);
+        if (d < minDist) {
+          minDist = d;
+          closest = p;
+        }
+      }
+
+      if (closest) {
+        hoveredIdRef.current = closest.id;
+        const [px, py] = pitchToCanvas(closest.x, closest.y, vp);
+        setHoveredInfo({
+          player: closest,
+          leftPct: Math.max(12, Math.min(88, (px / vp.width) * 100)),
+          topPct: Math.max(14, Math.min(82, (py / vp.height) * 100)),
+        });
+      } else if (hoveredIdRef.current !== null) {
+        hoveredIdRef.current = null;
+        setHoveredInfo(null);
+      }
+    },
+    []
   );
-  const vor1Pct = 100 - vor0Pct;
 
-  const def0X = snapshotFrame?.def_x?.["0"];
-  const def1X = snapshotFrame?.def_x?.["1"];
-  const activeDefLine =
-    typeof def1X === "number"
-      ? { label: "B", x: def1X, color: "#FB7185" }
-      : typeof def0X === "number"
-      ? { label: "A", x: def0X, color: "#38BDF8" }
-      : null;
+  const handleCanvasMouseLeave = useCallback(() => {
+    hoveredIdRef.current = null;
+    setHoveredInfo(null);
+  }, []);
+
+  const handleCanvasClick = useCallback(() => {
+    router.push(`/match/${targetMatchId}`);
+  }, [router, targetMatchId]);
 
   const matchDisplay = featuredMatch
     ? resolveMatchDisplay(featuredMatch, t, lang)
     : null;
   const CornerIcon = isRTL ? ArrowUpLeft : ArrowUpRight;
 
+  const formatTimecode = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toFixed(1).padStart(4, "0")}`;
+  };
+
   return (
-    <div className="obsidian-card rounded-2xl p-4 sm:p-5 relative overflow-hidden select-none">
-      {/* Top Telemetry Bezel: Real Match Source Badge + Pitch Spec */}
-      <div className="flex items-center justify-between gap-2 mb-3">
+    <div className="obsidian-card studio-hero-frame rounded-2xl p-3.5 sm:p-4 relative overflow-hidden select-none">
+      {/* ── Top Studio Control Bezel ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
         <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg obsidian-well min-w-0">
-          <span className="w-2 h-2 rounded-full bg-tv-mint animate-pulse shrink-0" />
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              isPlaying ? "bg-tv-mint animate-pulse" : "bg-tv-amber"
+            }`}
+          />
           <span className="text-[11px] font-bold text-slate-200 truncate">
             {t("hub.schematic_live")}
           </span>
+          <span className="text-slate-600">·</span>
+          <BidiNum
+            data-hero-timecode={hud.timeSec.toFixed(2)}
+            data-hero-frame={hud.frameNum}
+            className="text-[11px] font-bold text-tv-cyan"
+          >
+            {formatTimecode(hud.timeSec)}
+          </BidiNum>
         </div>
 
-        <span className="inline-flex items-baseline gap-1 text-[11px] text-slate-400 px-2.5 py-1 rounded-lg obsidian-well shrink-0">
-          <BidiNum>
-            {telemetry?.match_info?.pitch_dimensions_m
-              ? `${telemetry.match_info.pitch_dimensions_m[0]}×${telemetry.match_info.pitch_dimensions_m[1]}`
-              : "105×68"}
-          </BidiNum>
-          <span>{t("meters")}</span>
-          <span className="text-slate-600">·</span>
-          <BidiNum>{Math.round(featuredMatch?.fps ?? 25)}</BidiNum>
-          <span>{t("card.fps")}</span>
-        </span>
+        {/* Compact Interactive Telemetry Controls */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowVoronoi((v) => !v)}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+              showVoronoi
+                ? "bg-tv-cyan/15 border-tv-cyan/35 text-tv-cyan"
+                : "obsidian-well text-slate-400 hover:text-white"
+            }`}
+          >
+            <Grid className="w-3 h-3" />
+            <span>{t("hub.hero_voronoi_short")}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowHulls((h) => !h)}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+              showHulls
+                ? "bg-tv-coral/15 border-tv-coral/35 text-tv-coral"
+                : "obsidian-well text-slate-400 hover:text-white"
+            }`}
+          >
+            <Shield className="w-3 h-3" />
+            <span>{t("hub.hero_hull_short")}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsPlaying((p) => !p)}
+            aria-label={isPlaying ? t("wr.pause") : t("wr.play")}
+            className="p-1.5 rounded-lg obsidian-well hover:border-tv-cyan/40 text-slate-200 hover:text-tv-cyan transition-colors cursor-pointer"
+          >
+            {isPlaying ? (
+              <Pause className="w-3.5 h-3.5 fill-current" />
+            ) : (
+              <Play className="w-3.5 h-3.5 fill-current" />
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Real-Frame SVG FIFA Pitch */}
+      {/* ── Live 60FPS Real-Telemetry Broadcast Pitch Canvas ── */}
       <div
+        ref={containerRef}
         dir="ltr"
-        className="relative rounded-xl overflow-hidden border border-white/[0.09] bg-[#0C1B17]"
+        className="relative aspect-[105/68] w-full rounded-xl overflow-hidden border border-white/[0.1] bg-[#060B10] shadow-inner"
       >
-        <svg
-          viewBox={`0 0 ${vbW} ${vbH}`}
-          className="w-full h-auto block"
-          role="img"
-          aria-label={t("hub.schematic_live")}
-        >
-          <defs>
-            <linearGradient id="heroRealVoronoi" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.16" />
-              <stop
-                offset={`${Math.max(10, Math.min(90, vor0Pct))}%`}
-                stopColor="#38BDF8"
-                stopOpacity="0.06"
-              />
-              <stop
-                offset={`${Math.max(10, Math.min(90, vor0Pct + 5))}%`}
-                stopColor="#FB7185"
-                stopOpacity="0.07"
-              />
-              <stop offset="100%" stopColor="#FB7185" stopOpacity="0.17" />
-            </linearGradient>
-          </defs>
+        <canvas
+          ref={canvasRef}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={handleCanvasMouseLeave}
+          onClick={handleCanvasClick}
+          className="block w-full h-full cursor-pointer"
+        />
 
-          {/* Calm Stadium Slate-Emerald Turf Stripes */}
-          {Array.from({ length: 10 }).map((_, idx) => (
-            <rect
-              key={`stripe-${idx}`}
-              x={pad + idx * (pitchW / 10)}
-              y={pad}
-              width={pitchW / 10}
-              height={pitchH}
-              fill={idx % 2 === 0 ? "#0C1B17" : "#10231E"}
+        {/* Sequence Loop Timeline Hairline */}
+        <div className="absolute bottom-0 inset-x-0 h-[2px] bg-white/[0.06] pointer-events-none">
+          <div
+            style={{ width: `${hud.progressPct}%` }}
+            className="h-full bg-gradient-to-r from-tv-cyan to-tv-mint transition-[width] duration-75"
+          />
+        </div>
+
+        {/* Live Floating Glass Player Telemetry Tooltip */}
+        {hoveredInfo && (
+          <div
+            dir={isRTL ? "rtl" : "ltr"}
+            style={{
+              left: `${hoveredInfo.leftPct}%`,
+              top: `${hoveredInfo.topPct}%`,
+            }}
+            className="absolute -translate-x-1/2 -translate-y-[135%] pointer-events-none z-20 px-2.5 py-1.5 rounded-lg obsidian-popover text-[11px] flex items-center gap-2 whitespace-nowrap shadow-xl"
+          >
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                hoveredInfo.player.team === 0 ? "bg-tv-cyan" : "bg-tv-coral"
+              }`}
             />
-          ))}
+            <span className="font-bold text-white">
+              {formatTeamName(hoveredInfo.player.team, lang)}{" "}
+              <BidiNum>#{hoveredInfo.player.id}</BidiNum>
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="inline-flex items-baseline gap-0.5 text-tv-mint font-bold">
+              <BidiNum>{hoveredInfo.player.spd.toFixed(1)}</BidiNum>
+              <span>{t("km_h")}</span>
+            </span>
+          </div>
+        )}
 
-          {/* Dynamic Voronoi Split Matched 1:1 to Real Frame Percentage */}
-          {snapshotFrame && (
-            <rect
-              x={pad}
-              y={pad}
-              width={pitchW}
-              height={pitchH}
-              fill="url(#heroRealVoronoi)"
-            />
-          )}
-
-          {/* Standard Crisp FIFA Markings */}
-          <g stroke="rgba(255,255,255,0.24)" strokeWidth="1.2" fill="none">
-            <rect x={pad} y={pad} width={pitchW} height={pitchH} />
-            <line
-              x1={scaleX(52.5)}
-              y1={pad}
-              x2={scaleX(52.5)}
-              y2={pad + pitchH}
-            />
-            <circle cx={scaleX(52.5)} cy={scaleY(34)} r={9.15 * (pitchW / 105)} />
-            <rect
-              x={pad}
-              y={scaleY((68 - 40.32) / 2)}
-              width={16.5 * (pitchW / 105)}
-              height={40.32 * (pitchH / 68)}
-            />
-            <rect
-              x={scaleX(105 - 16.5)}
-              y={scaleY((68 - 40.32) / 2)}
-              width={16.5 * (pitchW / 105)}
-              height={40.32 * (pitchH / 68)}
-            />
-          </g>
-
-          {/* Real Outfield Convex Hulls */}
-          {hull0Path && (
-            <path
-              d={hull0Path}
-              fill="rgba(56, 189, 248, 0.11)"
-              stroke="#38BDF8"
-              strokeWidth="1.4"
-              strokeDasharray="5 4"
-            />
-          )}
-          {hull1Path && (
-            <path
-              d={hull1Path}
-              fill="rgba(251, 113, 133, 0.11)"
-              stroke="#FB7185"
-              strokeWidth="1.4"
-              strokeDasharray="5 4"
-            />
-          )}
-
-          {/* Real Virtual Defensive Line from Frame */}
-          {activeDefLine && (
-            <g>
-              <line
-                x1={scaleX(Math.max(0, Math.min(105, activeDefLine.x)))}
-                y1={pad}
-                x2={scaleX(Math.max(0, Math.min(105, activeDefLine.x)))}
-                y2={pad + pitchH}
-                stroke={activeDefLine.color}
-                strokeWidth="1.4"
-                strokeDasharray="4 4"
-              />
-              <g
-                transform={`translate(${Math.max(
-                  pad + 4,
-                  Math.min(
-                    pad + pitchW - 56,
-                    scaleX(activeDefLine.x) - 26
-                  )
-                )}, ${pad + pitchH - 20})`}
-              >
-                <rect
-                  width="52"
-                  height="16"
-                  rx="4"
-                  fill="rgba(8, 13, 24, 0.92)"
-                  stroke={activeDefLine.color}
-                  strokeOpacity="0.65"
-                  strokeWidth="1"
-                />
-                <text
-                  x="26"
-                  y="11"
-                  textAnchor="middle"
-                  fill={activeDefLine.color}
-                  fontSize="9.2"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  {activeDefLine.label} {activeDefLine.x.toFixed(1)}m
-                </text>
-              </g>
-            </g>
-          )}
-
-          {/* Real Tracked Ball */}
-          {snapshotFrame?.ball && (
-            <circle
-              cx={scaleX(Math.max(0, Math.min(105, snapshotFrame.ball[0])))}
-              cy={scaleY(Math.max(0, Math.min(68, snapshotFrame.ball[1])))}
-              r="4.5"
-              fill="#FFFFFF"
-              stroke="#34D399"
-              strokeWidth="2"
-            />
-          )}
-
-          {/* Real Tracked Players from `telemetry.frames` */}
-          {(snapshotFrame?.players || []).map((p) => {
-            if (p.x < -3 || p.x > 108 || p.y < -3 || p.y > 71) return null;
-            const cx = scaleX(Math.max(0, Math.min(105, p.x)));
-            const cy = scaleY(Math.max(0, Math.min(68, p.y)));
-            const isTeam0 = p.team === 0;
-            const isSprint = p.spd >= 24.0;
-            const isHovered = hoveredNode?.id === p.id;
-            const fill = isTeam0 ? "#38BDF8" : "#FB7185";
-
-            return (
-              <g
-                key={p.id}
-                onMouseEnter={() => setHoveredNode(p)}
-                onMouseLeave={() => setHoveredNode(null)}
-                className="cursor-pointer"
-              >
-                {isSprint && (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={isHovered ? 12 : 9.8}
-                    fill="none"
-                    stroke="#34D399"
-                    strokeWidth="1.3"
-                    strokeOpacity="0.85"
-                  />
-                )}
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={isHovered ? 8.2 : 6.6}
-                  fill={fill}
-                  stroke="#060912"
-                  strokeWidth="1.6"
-                />
-                <text
-                  x={cx}
-                  y={cy + 2.8}
-                  textAnchor="middle"
-                  fill={isTeam0 ? "#041019" : "#FFFFFF"}
-                  fontSize="7.4"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  {p.id}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Interactive Real Speed Tooltip */}
-          {hoveredNode && (
-            <g
-              transform={`translate(${Math.min(
-                vbW - 112,
-                Math.max(
-                  12,
-                  scaleX(Math.max(0, Math.min(105, hoveredNode.x))) - 52
-                )
-              )}, ${Math.max(
-                10,
-                scaleY(Math.max(0, Math.min(68, hoveredNode.y))) - 30
-              )})`}
-            >
-              <rect
-                width="104"
-                height="20"
-                rx="6"
-                fill="rgba(8, 13, 24, 0.96)"
-                stroke="rgba(255,255,255,0.22)"
-                strokeWidth="1"
-              />
-              <text
-                x="52"
-                y="13.5"
-                textAnchor="middle"
-                fill="#F8FAFC"
-                fontSize="9.5"
-                fontFamily="monospace"
-                fontWeight="bold"
-              >
-                #{hoveredNode.id} · {hoveredNode.spd.toFixed(1)} km/h
-              </text>
-            </g>
-          )}
-        </svg>
-
-        {/* Subtle Shimmer Overlay Only While Telemetry Loads */}
-        {!snapshotFrame && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+        {/* Loading State Until Real Telemetry Arrives */}
+        {!stabilized && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#060B10]/80">
             <span className="text-xs text-slate-400 animate-pulse">
               {matchDisplay?.title || t("hub.schematic_live")}
             </span>
@@ -407,28 +467,38 @@ export function HeroPitchVisual({ featuredMatch }: HeroPitchVisualProps) {
         )}
       </div>
 
-      {/* Real-Data Legend & Deep Link Footer */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2 text-slate-400">
-          <span>{t("hub.schematic_voronoi")}:</span>
-          <span className="inline-flex items-center gap-1 font-bold">
-            <BidiNum className="text-tv-cyan">{vor0Pct}%</BidiNum>
-            <span className="text-slate-600">/</span>
-            <BidiNum className="text-tv-coral">{vor1Pct}%</BidiNum>
-          </span>
+      {/* ── Live Interpolated Metrics & Source Deep Link ── */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400">{t("hub.schematic_voronoi")}:</span>
+            <span className="inline-flex items-center gap-1 font-bold">
+              <BidiNum className="text-tv-cyan">{hud.vor0}%</BidiNum>
+              <span className="text-slate-600">/</span>
+              <BidiNum className="text-tv-coral">{hud.vor1}%</BidiNum>
+            </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-1.5 ps-3 border-s border-white/[0.08] text-[11px] text-slate-400">
+            <span>{t("hub.schematic_hull")}:</span>
+            <BidiNum className="font-semibold text-slate-200">
+              {hud.hull0} / {hud.hull1}
+            </BidiNum>
+            <span>{t("meters")}²</span>
+          </div>
         </div>
 
-        {featuredMatch && matchDisplay && (
-          <Link
-            href={`/match/${featuredMatch.id}`}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-tv-cyan hover:text-white transition-colors truncate max-w-[230px]"
-          >
-            <span className="truncate">
-              {t("hub.hero_live_from")}: {matchDisplay.title}
-            </span>
-            <CornerIcon className="w-3.5 h-3.5 shrink-0" />
-          </Link>
-        )}
+        <Link
+          href={`/match/${targetMatchId}`}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-tv-cyan hover:text-white transition-colors truncate max-w-[240px]"
+        >
+          <span className="truncate">
+            {matchDisplay
+              ? `${t("hub.hero_live_from")}: ${matchDisplay.title}`
+              : t("hub.hero_open_match")}
+          </span>
+          <CornerIcon className="w-3.5 h-3.5 shrink-0" />
+        </Link>
       </div>
     </div>
   );

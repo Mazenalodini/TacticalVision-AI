@@ -4,11 +4,11 @@
 
 /* ── Broadcast Studio Design Tokens ── */
 :root {
-  --tv-base: #060912;
-  --tv-surface: #0e1627;
-  --tv-elevated: #141f35;
-  --tv-well: #080d18;
-  --tv-border: rgba(148, 163, 184, 0.13);
+  --tv-base: #04070f;
+  --tv-surface: #0b1220;
+  --tv-elevated: #121c31;
+  --tv-well: #060a14;
+  --tv-border: rgba(148, 163, 184, 0.12);
   --tv-border-strong: rgba(148, 163, 184, 0.22);
   --tv-cyan: #38bdf8;
   --tv-coral: #fb7185;
@@ -56,29 +56,36 @@ html[dir="rtl"] *:not([dir="ltr"]):not(.font-mono) {
   display: inline-block;
 }
 
-/* ── Layered Translucent Studio Glass Surfaces ── */
+/* ── Atmospheric Specular Studio Glass Surfaces ── */
 .obsidian-card {
   background: linear-gradient(
     180deg,
-    rgba(16, 25, 43, 0.74) 0%,
-    rgba(10, 16, 29, 0.84) 100%
+    rgba(16, 25, 44, 0.72) 0%,
+    rgba(8, 13, 24, 0.86) 100%
   );
-  border: 1px solid var(--tv-border);
+  border: 1px solid rgba(148, 163, 184, 0.13);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.09),
-    0 18px 40px -14px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.11),
+    0 20px 44px -16px rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+}
+
+.studio-hero-frame {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    0 26px 64px -18px rgba(0, 0, 0, 0.88),
+    0 0 48px -18px rgba(56, 189, 248, 0.22);
 }
 
 .obsidian-popover {
-  background: rgba(13, 21, 37, 0.97);
+  background: rgba(10, 16, 30, 0.96);
   border: 1px solid rgba(148, 163, 184, 0.22);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
-    0 24px 56px -12px rgba(0, 0, 0, 0.88);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    0 26px 60px -12px rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
 }
 
 .obsidian-card-interactive {
@@ -90,24 +97,28 @@ html[dir="rtl"] *:not([dir="ltr"]):not(.font-mono) {
 }
 
 .obsidian-card-interactive:hover {
-  border-color: rgba(56, 189, 248, 0.34);
+  border-color: rgba(56, 189, 248, 0.36);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
-    0 22px 44px -14px rgba(0, 0, 0, 0.78),
-    0 0 28px -10px rgba(56, 189, 248, 0.18);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
+    0 24px 48px -14px rgba(0, 0, 0, 0.84),
+    0 0 32px -12px rgba(56, 189, 248, 0.22);
 }
 
 .obsidian-well {
-  background-color: rgba(8, 13, 24, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.09);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.42);
+  background-color: rgba(6, 10, 20, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
 .editorial-tab-active {
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 /* Safe-area padding for mobile bottom nav */

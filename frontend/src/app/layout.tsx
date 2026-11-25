@@ -75,27 +75,31 @@ export default function RootLayout({
       <body
         className={`${jakarta.variable} ${plexArabic.variable} ${jetbrains.variable} font-sans antialiased`}
       >
-        {/* Persistent Multi-Layer Ambient Broadcast Studio Lighting */}
+        {/* Persistent Multi-Layer Atmospheric Broadcast Studio Lighting */}
         <div
           aria-hidden="true"
-          className="fixed inset-0 -z-10 pointer-events-none overflow-hidden bg-[#060912]"
+          className="fixed inset-0 -z-10 pointer-events-none overflow-hidden bg-[#04070F]"
         >
-          {/* Deep cobalt-navy top-start studio pool */}
-          <div className="absolute -top-40 -start-28 w-[760px] h-[540px] rounded-full bg-[#1D4ED8]/[0.13] blur-[150px]" />
+          {/* Deep cobalt-navy top-start stadium floodlight */}
+          <div className="absolute -top-44 -start-28 w-[820px] h-[560px] rounded-full bg-[#1D4ED8]/[0.15] blur-[155px]" />
           {/* Dark emerald tactical turf glow bottom-end */}
-          <div className="absolute -bottom-44 -end-28 w-[720px] h-[520px] rounded-full bg-[#10B981]/[0.09] blur-[160px]" />
-          {/* Subtle mid-canvas rose & sky atmospheric bloom */}
-          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[820px] h-[360px] rounded-full bg-[#38BDF8]/[0.05] blur-[150px]" />
-          <div className="absolute top-[55%] start-[18%] w-[480px] h-[320px] rounded-full bg-[#FB7185]/[0.05] blur-[140px]" />
-          {/* Fine architectural stadium grid */}
+          <div className="absolute -bottom-44 -end-28 w-[760px] h-[520px] rounded-full bg-[#10B981]/[0.10] blur-[165px]" />
+          {/* Broadcast sky & luminous rose subtle studio aura */}
+          <div className="absolute top-[22%] left-1/2 -translate-x-1/2 w-[880px] h-[360px] rounded-full bg-[#38BDF8]/[0.06] blur-[150px]" />
+          <div className="absolute top-[58%] start-[16%] w-[520px] h-[320px] rounded-full bg-[#FB7185]/[0.05] blur-[150px]" />
+          {/* Radial-masked fine architectural grid */}
           <div
-            className="absolute inset-0 opacity-[0.028]"
+            className="absolute inset-0 opacity-[0.032]"
             style={{
               backgroundImage: `
                 linear-gradient(to right, rgba(226, 232, 240, 0.5) 1px, transparent 1px),
                 linear-gradient(to bottom, rgba(226, 232, 240, 0.5) 1px, transparent 1px)
               `,
               backgroundSize: "72px 72px",
+              maskImage:
+                "radial-gradient(ellipse 85% 75% at 50% 25%, black 20%, transparent 100%)",
+              WebkitMaskImage:
+                "radial-gradient(ellipse 85% 75% at 50% 25%, black 20%, transparent 100%)",
             }}
           />
         </div>

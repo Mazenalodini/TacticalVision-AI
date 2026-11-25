@@ -14,7 +14,7 @@ function drawClampedPillBadge(
   ctx.save();
   ctx.font = "bold 10px var(--font-jetbrains), monospace";
   const measured = ctx.measureText(text).width;
-  const badgeW = Math.max(52, Math.ceil(measured + 14));
+  const badgeW = Math.max(54, Math.ceil(measured + 14));
   const badgeH = 18;
 
   const clampedCenterX = Math.max(
@@ -25,7 +25,7 @@ function drawClampedPillBadge(
   const boxX = clampedCenterX - badgeW / 2;
 
   ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(6, 11, 20, 0.92)";
+  ctx.fillStyle = "rgba(5, 9, 18, 0.94)";
   ctx.strokeStyle = accentColor;
   ctx.lineWidth = 1.1;
 
@@ -46,8 +46,8 @@ function drawClampedPillBadge(
 }
 
 /**
- * Draws virtual defensive lines (last outfield defender line X) for Team A and Team B.
- * Handles string keys ("0" / "1"), sparse frames, and guarantees zero badge clipping.
+ * Draws stabilized virtual defensive lines for Team A and Team B with subtle
+ * laser zone gradient and clamped glass pill badges.
  */
 export function drawDefLines(
   ctx: CanvasRenderingContext2D,
@@ -57,19 +57,26 @@ export function drawDefLines(
   if (!def_x) return;
 
   const W = FIFA_PITCH.width;
+  const [, topY] = pitchToCanvas(0, 0, vp);
+  const [, botY] = pitchToCanvas(0, W, vp);
+  const lineH = botY - topY;
 
-  // Team 0 Defensive Line (Cyan — badge anchored in safe top margin)
+  // Team 0 Defensive Line (Broadcast Sky)
   const def0 = def_x["0"];
-  if (def0 !== undefined && typeof def0 === "number" && !isNaN(def0)) {
+  if (def0 !== undefined && typeof def0 === "number" && Number.isFinite(def0)) {
     const [lineX] = pitchToCanvas(def0, 0, vp);
-    const [, topY] = pitchToCanvas(0, 0, vp);
-    const [, botY] = pitchToCanvas(0, W, vp);
 
     ctx.save();
+    const beam0 = ctx.createLinearGradient(lineX - 12, 0, lineX, 0);
+    beam0.addColorStop(0, "rgba(56, 189, 248, 0)");
+    beam0.addColorStop(1, "rgba(56, 189, 248, 0.12)");
+    ctx.fillStyle = beam0;
+    ctx.fillRect(lineX - 12, topY, 12, lineH);
+
     ctx.beginPath();
     ctx.setLineDash([5, 5]);
     ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.5;
     ctx.moveTo(lineX, topY);
     ctx.lineTo(lineX, botY);
     ctx.stroke();
@@ -85,18 +92,22 @@ export function drawDefLines(
     );
   }
 
-  // Team 1 Defensive Line (Rose-Coral — badge anchored in safe bottom margin)
+  // Team 1 Defensive Line (Luminous Rose)
   const def1 = def_x["1"];
-  if (def1 !== undefined && typeof def1 === "number" && !isNaN(def1)) {
+  if (def1 !== undefined && typeof def1 === "number" && Number.isFinite(def1)) {
     const [lineX] = pitchToCanvas(def1, 0, vp);
-    const [, topY] = pitchToCanvas(0, 0, vp);
-    const [, botY] = pitchToCanvas(0, W, vp);
 
     ctx.save();
+    const beam1 = ctx.createLinearGradient(lineX, 0, lineX + 12, 0);
+    beam1.addColorStop(0, "rgba(251, 113, 133, 0.12)");
+    beam1.addColorStop(1, "rgba(251, 113, 133, 0)");
+    ctx.fillStyle = beam1;
+    ctx.fillRect(lineX, topY, 12, lineH);
+
     ctx.beginPath();
     ctx.setLineDash([5, 5]);
     ctx.strokeStyle = "rgba(251, 113, 133, 0.85)";
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.5;
     ctx.moveTo(lineX, topY);
     ctx.lineTo(lineX, botY);
     ctx.stroke();

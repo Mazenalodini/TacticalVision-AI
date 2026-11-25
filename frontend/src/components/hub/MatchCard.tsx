@@ -100,7 +100,7 @@ export function MatchCard({ match, onDelete }: MatchCardProps) {
           <div
             className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-300"
             style={{
-              background: `radial-gradient(380px circle at ${spotlight.x}px ${spotlight.y}px, rgba(30, 200, 255, 0.08), transparent 70%)`,
+              background: `radial-gradient(380px circle at ${spotlight.x}px ${spotlight.y}px, rgba(56, 189, 248, 0.09), transparent 70%)`,
             }}
           />
         )}
