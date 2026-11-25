@@ -264,7 +264,7 @@ export function D3PassNetworkPitch({
       {/* ── Declarative SVG + D3 Pitch Pass Graph ── */}
       <div
         dir="ltr"
-        className="relative rounded-xl overflow-hidden border border-white/[0.09] bg-[#0C1B17]"
+        className="relative rounded-xl overflow-hidden border border-white/[0.09] bg-[#0A141A]"
       >
         <svg
           viewBox={`0 0 ${vbW} ${vbH}`}
@@ -308,7 +308,7 @@ export function D3PassNetworkPitch({
             </marker>
           </defs>
 
-          {/* Alternating Slate-Emerald Turf Stripes */}
+          {/* Alternating Night-Emerald Slate Turf Stripes */}
           {Array.from({ length: 10 }).map((_, i) => (
             <rect
               key={`turf-${i}`}
@@ -316,7 +316,7 @@ export function D3PassNetworkPitch({
               y={padY}
               width={pitchW / 10}
               height={pitchH}
-              fill={i % 2 === 0 ? "#0C1B17" : "#10231E"}
+              fill={i % 2 === 0 ? "#0A141A" : "#0D1920"}
             />
           ))}
 

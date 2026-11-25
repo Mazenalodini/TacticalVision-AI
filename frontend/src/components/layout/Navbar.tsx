@@ -178,20 +178,31 @@ export function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-14 w-full bg-[#050912]/85 backdrop-blur-xl border-b border-white/[0.08] shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] print:hidden">
+      <header className="sticky top-0 z-40 h-14 w-full bg-[#04070F]/85 backdrop-blur-2xl border-b border-white/[0.08] shadow-[inset_0_-1px_0_rgba(255,255,255,0.03)] print:hidden">
         <div className="max-w-[1850px] mx-auto h-full px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
-          {/* ── Start: Brand Identity ── */}
+          {/* ── Start: Brand Identity (Strictly LTR so brand reads "TacticalVision AI" in EN & AR) ── */}
           <div className="flex items-center gap-3 min-w-0">
             <Link href="/" className="flex items-center gap-2.5 group min-w-0">
               <BrandEmblem />
-              <div className="flex items-center gap-1.5 truncate">
-                <span className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
-                  {t("nav.title")}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  dir="ltr"
+                  className="inline-flex items-baseline gap-1 truncate font-sans"
+                >
+                  <span
+                    data-brand-word="primary"
+                    className="text-sm sm:text-base font-extrabold text-white tracking-tight"
+                  >
+                    {t("nav.title")}
+                  </span>
+                  <span
+                    data-brand-word="ai"
+                    className="text-xs sm:text-sm font-black text-tv-cyan"
+                  >
+                    AI
+                  </span>
                 </span>
-                <span className="text-xs sm:text-sm font-black text-tv-cyan font-sans">
-                  AI
-                </span>
-                <span className="hidden xl:inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/[0.05] border border-white/10 text-slate-400 ms-1">
+                <span className="hidden xl:inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white/[0.05] border border-white/10 text-slate-400 ms-1 shrink-0">
                   {t("nav.studio_badge")}
                 </span>
               </div>

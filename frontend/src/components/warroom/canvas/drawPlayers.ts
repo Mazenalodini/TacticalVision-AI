@@ -11,11 +11,12 @@ export interface PlayerTrajectoryPoint {
   x: number;
   y: number;
   frame: number;
+  breakBefore?: boolean;
 }
 
 /**
- * Draws active players, goalkeepers, active sprints, selected player spotlight,
- * player movement trajectory path, and the ball with its fading comet trail.
+ * Draws stabilized players, goalkeepers, sprint halos, selected spotlight reticle,
+ * discontinuity-safe fading comet player trajectory, and luminous ball comet trail.
  */
 export function drawPlayers(
   ctx: CanvasRenderingContext2D,
@@ -25,26 +26,28 @@ export function drawPlayers(
   selectedPlayerId: number | null,
   trajectory: PlayerTrajectoryPoint[] | undefined,
   currentFrameIndex: number,
-  vp: PitchViewport
+  vp: PitchViewport,
+  hoveredPlayerId: number | null = null
 ) {
-  // ── 0. Draw Selected Player Movement Trajectory Path ──
+  // ── 0. Selected Player Discontinuity-Safe Trajectory Path ──
   if (selectedPlayerId !== null && trajectory && trajectory.length > 1) {
     ctx.save();
 
-    // 0A. Full-clip subtle faded trajectory
+    const isJump = (p1: PlayerTrajectoryPoint, p2: PlayerTrajectoryPoint) =>
+      Boolean(p2.breakBefore) ||
+      p2.frame - p1.frame > 6 ||
+      Math.hypot(p2.x - p1.x, p2.y - p1.y) > 3.8;
+
+    // 0A. Subtle full-clip ghost path (breaks cleanly across gaps/glitches)
     ctx.beginPath();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
+    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = "rgba(226, 232, 240, 0.16)";
     ctx.setLineDash([3, 4]);
 
     for (let i = 1; i < trajectory.length; i++) {
       const p1 = trajectory[i - 1];
       const p2 = trajectory[i];
-
-      // Break cleanly if frame gap > 12 frames (player left & re-entered camera)
-      if (p2.frame - p1.frame > 12) {
-        continue;
-      }
+      if (isJump(p1, p2)) continue;
 
       const [x1, y1] = pitchToCanvas(p1.x, p1.y, vp);
       const [x2, y2] = pitchToCanvas(p2.x, p2.y, vp);
@@ -53,58 +56,59 @@ export function drawPlayers(
     }
     ctx.stroke();
 
-    // 0B. Solid vibrant trajectory up to current frame
-    const pastTrajectory = trajectory.filter((p) => p.frame <= currentFrameIndex);
-    if (pastTrajectory.length > 1) {
-      ctx.beginPath();
-      ctx.setLineDash([]);
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = "#3CFF82";
+    // 0B. Luminous Mint fading comet tail up to currentFrameIndex (last ~100 frames)
+    const pastWindowStart = Math.max(0, currentFrameIndex - 100);
+    const pastTrajectory = trajectory.filter(
+      (p) => p.frame <= currentFrameIndex && p.frame >= pastWindowStart
+    );
 
-      for (let i = 1; i < pastTrajectory.length; i++) {
+    if (pastTrajectory.length > 1) {
+      ctx.setLineDash([]);
+      ctx.lineCap = "round";
+      const total = pastTrajectory.length;
+      for (let i = 1; i < total; i++) {
         const p1 = pastTrajectory[i - 1];
         const p2 = pastTrajectory[i];
-
-        if (p2.frame - p1.frame > 12) {
-          continue;
-        }
+        if (isJump(p1, p2)) continue;
 
         const [x1, y1] = pitchToCanvas(p1.x, p1.y, vp);
         const [x2, y2] = pitchToCanvas(p2.x, p2.y, vp);
+        const progress = i / total;
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(52, 211, 153, ${(0.12 + progress * 0.82).toFixed(2)})`;
+        ctx.lineWidth = 1.6 + progress * 1.9;
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
+        ctx.stroke();
       }
-      ctx.stroke();
     }
 
     ctx.restore();
   }
 
-  // ── 1. Draw Ball Comet Trail ──
+  // ── 1. Ball Luminous Comet Trail ──
   if (ballTrail.length > 1) {
     ctx.save();
     const trailLen = ballTrail.length;
+    ctx.lineCap = "round";
     for (let i = 1; i < trailLen; i++) {
       const p1 = ballTrail[i - 1];
       const p2 = ballTrail[i];
 
       const frameGap = p2.frame - p1.frame;
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
 
-      if (frameGap <= 2 && dist <= 15.0) {
+      if (frameGap >= 0 && frameGap <= 3 && dist <= 7.5) {
         const [cx1, cy1] = pitchToCanvas(p1.x, p1.y, vp);
         const [cx2, cy2] = pitchToCanvas(p2.x, p2.y, vp);
 
         const progress = i / trailLen;
-        const alpha = Math.max(0.08, progress * 0.75);
-        const lineWidth = Math.max(1.5, progress * 4.0);
+        const alpha = Math.max(0.08, progress * 0.78);
+        const lineWidth = Math.max(1.4, progress * 3.6);
 
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(52, 211, 153, ${alpha})`;
+        ctx.strokeStyle = `rgba(52, 211, 153, ${alpha.toFixed(2)})`;
         ctx.lineWidth = lineWidth;
-        ctx.lineCap = "round";
         ctx.moveTo(cx1, cy1);
         ctx.lineTo(cx2, cy2);
         ctx.stroke();
@@ -113,39 +117,44 @@ export function drawPlayers(
     ctx.restore();
   }
 
-  // ── 2. Draw Ball ──
-  if (ball && ball.length === 2 && !isNaN(ball[0]) && !isNaN(ball[1])) {
+  // ── 2. Ball Marker with Bloom Halo ──
+  if (ball && ball.length === 2 && Number.isFinite(ball[0]) && Number.isFinite(ball[1])) {
     const [bx, by] = pitchToCanvas(ball[0], ball[1], vp);
 
     ctx.save();
+    const ballGlow = ctx.createRadialGradient(bx, by, 1, bx, by, 11);
+    ballGlow.addColorStop(0, "rgba(255, 255, 255, 0.55)");
+    ballGlow.addColorStop(0.5, "rgba(52, 211, 153, 0.35)");
+    ballGlow.addColorStop(1, "rgba(52, 211, 153, 0)");
+    ctx.fillStyle = ballGlow;
     ctx.beginPath();
-    ctx.arc(bx, by, 7, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(52, 211, 153, 0.35)";
+    ctx.arc(bx, by, 11, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
+    ctx.arc(bx, by, 4.4, 0, Math.PI * 2);
     ctx.fillStyle = "#FFFFFF";
     ctx.fill();
-    ctx.strokeStyle = "#05090C";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#060B10";
+    ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.restore();
   }
 
-  // ── 3. Draw Players ──
+  // ── 3. Players & Goalkeepers ──
   if (!players || players.length === 0) return;
 
   const now = performance.now();
-  const pulseScale = 1.0 + 0.15 * Math.sin(now * 0.007);
+  const pulseScale = 1.0 + 0.14 * Math.sin(now * 0.006);
 
   for (const player of players) {
-    // Allow boundary goalkeepers/wingers slightly outside line [-3..108, -3..71] and clamp visually
     if (
-      player.x < -3 ||
-      player.x > FIFA_PITCH.length + 3 ||
-      player.y < -3 ||
-      player.y > FIFA_PITCH.width + 3
+      !Number.isFinite(player.x) ||
+      !Number.isFinite(player.y) ||
+      player.x < -1.2 ||
+      player.x > FIFA_PITCH.length + 1.2 ||
+      player.y < -1.2 ||
+      player.y > FIFA_PITCH.width + 1.2
     ) {
       continue;
     }
@@ -154,75 +163,86 @@ export function drawPlayers(
     const isTeam0 = player.team === 0;
     const teamColor = isTeam0 ? "#38BDF8" : "#FB7185";
     const isSelected = selectedPlayerId === player.id;
+    const isHovered = hoveredPlayerId === player.id;
     const isGK = player.role === "gk";
     const isSprint = player.spd >= FIFA_PITCH.sprintThresholdKmh;
 
     ctx.save();
 
-    // Dim non-selected players if a player is spotlighted
-    if (selectedPlayerId !== null && !isSelected) {
-      ctx.globalAlpha = 0.32;
+    if (selectedPlayerId !== null && !isSelected && !isHovered) {
+      ctx.globalAlpha = 0.34;
     }
 
-    // ── Spotlight Halo Ring (if selected) ──
+    // Selected player tactical dual-ring reticle
     if (isSelected) {
       ctx.beginPath();
-      ctx.arc(cx, cy, 18 * pulseScale, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 17.5 * pulseScale, 0, Math.PI * 2);
       ctx.strokeStyle = "#34D399";
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.2;
       ctx.setLineDash([4, 3]);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(cx, cy, 23 * pulseScale, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(52, 211, 153, 0.42)";
-      ctx.lineWidth = 1.5;
+      ctx.arc(cx, cy, 22 * pulseScale, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(52, 211, 153, 0.36)";
+      ctx.lineWidth = 1.2;
       ctx.setLineDash([]);
       ctx.stroke();
-    }
-
-    // ── Active Sprint Outer Ring (> 24 km/h) ──
-    if (isSprint && !isSelected) {
+    } else if (isHovered) {
       ctx.beginPath();
-      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-      ctx.strokeStyle = "#34D399";
-      ctx.lineWidth = 2;
+      ctx.arc(cx, cy, 14.5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = 1.6;
       ctx.stroke();
     }
 
-    // ── Player Dot / Marker ──
-    const radius = 10;
+    // Active Sprint outer rim (> 24 km/h)
+    if (isSprint && !isSelected) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 13.5, 0, Math.PI * 2);
+      ctx.strokeStyle = "#34D399";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+
+    // Soft studio drop shadow
+    const baseRadius = isGK ? 10.5 : 9.5;
+    const radius = isSelected || isHovered ? baseRadius + 1.2 : baseRadius;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy + 1.5, radius + 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(2, 6, 12, 0.55)";
+    ctx.fill();
 
     if (isGK) {
       ctx.beginPath();
-      ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius + 2.5, 0, Math.PI * 2);
       ctx.strokeStyle = teamColor;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = teamColor;
-      ctx.fill();
-      ctx.strokeStyle = "#070E0B";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.fillStyle = teamColor;
-      ctx.fill();
-      ctx.strokeStyle = "#070E0B";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.6;
       ctx.stroke();
     }
 
-    // ── Player Track ID Text ──
-    ctx.fillStyle = isTeam0 ? "#05090C" : "#FFFFFF";
-    ctx.font = "bold 9px var(--font-jetbrains), monospace";
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = teamColor;
+    ctx.fill();
+    ctx.strokeStyle = "#060B10";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Subtle specular top crescent inside token
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 1.2, -Math.PI * 0.85, -Math.PI * 0.15);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    // Razor-sharp Player ID Label
+    ctx.fillStyle = isTeam0 ? "#04101A" : "#FFFFFF";
+    ctx.font = "bold 8.8px var(--font-jetbrains), monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${player.id}`, cx, cy);
+    ctx.fillText(`${player.id}`, cx, cy + 0.5);
 
     ctx.restore();
   }

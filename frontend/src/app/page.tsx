@@ -186,12 +186,12 @@ export default function MatchHubPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-9">
         {/* ── 2-Column Editorial Studio Hero ── */}
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-7 lg:gap-8 items-center mb-9 pb-9 border-b border-white/[0.08]">
-          {/* Narrative, CTAs & 3-Step Pipeline Strip */}
-          <div className="lg:col-span-7 space-y-5">
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-7 lg:gap-9 items-center mb-9 pb-9 border-b border-white/[0.07]">
+          {/* Narrative, CTAs & 3-Step Hairline Pipeline Strip */}
+          <div className="lg:col-span-6 space-y-5">
             {/* Status Badges */}
             <div className="flex flex-wrap items-center gap-2.5">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-tv-cyan/10 border border-tv-cyan/25 text-xs font-semibold text-tv-cyan">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-tv-cyan/10 border border-tv-cyan/25 text-xs font-semibold text-tv-cyan shadow-[0_0_20px_-6px_rgba(56,189,248,0.45)]">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>{t("hub.hero_badge")}</span>
               </div>
@@ -224,10 +224,10 @@ export default function MatchHubPage() {
 
             {/* Display Headline & Value Proposition */}
             <div className="space-y-3">
-              <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-extrabold text-white tracking-tight leading-[1.2]">
+              <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight leading-[1.18] bg-gradient-to-b from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
                 {t("hub.hero_title")}
               </h1>
-              <p className="text-sm sm:text-base text-slate-400 max-w-2xl leading-relaxed">
+              <p className="text-sm sm:text-base text-slate-400 max-w-xl leading-relaxed">
                 {t("hub.hero_subtitle")}
               </p>
             </div>
@@ -237,7 +237,7 @@ export default function MatchHubPage() {
               <button
                 type="button"
                 onClick={handleOpenUpload}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-tv-cyan text-slate-950 hover:bg-tv-cyan/90 shadow-lg shadow-tv-cyan/20 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-tv-cyan text-slate-950 hover:bg-tv-cyan/90 shadow-lg shadow-tv-cyan/25 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[2.75]" />
                 <span>{t("hub.cta_upload")}</span>
@@ -255,21 +255,21 @@ export default function MatchHubPage() {
               <button
                 type="button"
                 onClick={handleOpenWorkflow}
-                className="inline-flex items-center gap-1.5 px-3.5 py-3 rounded-xl font-semibold text-xs text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-3 rounded-xl font-semibold text-xs text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
               >
                 <Compass className="w-3.5 h-3.5 text-tv-mint" />
                 <span>{t("hub.cta_workflow")}</span>
               </button>
             </div>
 
-            {/* 3-Step Visual Product Workflow Strip */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+            {/* 3-Step Hairline-Divided Studio Pipeline Strip (Zero Heavy Box Soup) */}
+            <div className="rounded-xl obsidian-well grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x rtl:sm:divide-x-reverse divide-white/[0.07] overflow-hidden mt-2">
               {pipelineSteps.map((step) => {
                 const Icon = step.icon;
                 return (
                   <div
                     key={step.num}
-                    className="rounded-xl obsidian-well px-3.5 py-3 flex items-start gap-2.5 border border-white/[0.06]"
+                    className="px-3.5 py-3 flex items-start gap-2.5"
                   >
                     <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${step.accent}`} />
                     <div className="min-w-0">
@@ -291,8 +291,8 @@ export default function MatchHubPage() {
             </div>
           </div>
 
-          {/* Interactive Animated Tactical Radar Preview */}
-          <div className="lg:col-span-5">
+          {/* Interactive 60FPS Real-Data Animated Broadcast Pitch Centerpiece */}
+          <div className="lg:col-span-6">
             <HeroPitchVisual featuredMatch={featuredMatch} />
           </div>
         </section>
