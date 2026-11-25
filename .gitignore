@@ -1,0 +1,77 @@
+# ==============================================================================
+# TacticalVision AI — Production .gitignore
+# ==============================================================================
+# IMPORTANT: Root /models/ holds heavy YOLO weights and MUST stay anchored with a
+# leading slash so backend/models/ (FastAPI Pydantic schemas) remains tracked.
+
+# --- Python & Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+ENV/
+backend/tmp_uploads/
+backend/jobs/
+backend/bin/
+*.exe
+*.dll
+
+# --- Secrets & Environment Variables ---
+.env
+.env.*
+!.env.example
+frontend/.env*.local
+
+# --- Next.js & Frontend ---
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+*.tsbuildinfo
+
+# --- ML Model Weights & Heavy Media Binaries ---
+/models/
+*.pt
+*.pth
+*.onnx
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.log
+
+# --- Match Outputs & Runtime Caches ---
+# Pre-analyzed sample telemetry & preview snapshots in outputs/match_*/ stay
+# tracked for instant Match Hub & D3 Lab exploration; user uploads & heavy
+# rendered videos/thumbnail caches are excluded.
+outputs/user_*/
+outputs/*/broadcast_analyzed.mp4
+outputs/*/tactical_radar.mp4
+outputs/*/_thumb_*.jpg
+outputs/*/_meta.json
+
+# --- OS, IDE & Temporary QA Artifacts ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+*qa_report*.json
+verify_*.mjs
+live_browser_qa.mjs
+measure_rects.mjs
+check_fouc_esc.mjs

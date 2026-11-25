@@ -1,0 +1,244 @@
+{
+  "project": "TacticalVision_AI",
+  "created_at": "2026-11-20T01:09:02.740260+00:00",
+  "hardware": {
+    "gpu": "Tesla T4",
+    "vram_gb": 14.56,
+    "in_colab": true
+  },
+  "data_audit": {
+    "players_dataset": {
+      "splits": {
+        "train": {
+          "images": 612,
+          "missing_labels": 0,
+          "total_boxes": 14583
+        },
+        "val": {
+          "images": 38,
+          "missing_labels": 0,
+          "total_boxes": 905
+        },
+        "test": {
+          "images": 13,
+          "missing_labels": 0,
+          "total_boxes": 310
+        }
+      },
+      "corrupt_labels": [],
+      "leakage_pairs": 4,
+      "leakage_samples": [
+        [
+          "08fd33_3_5_png.rf.1e0794cb7dba80a7b461ce87a768fa5b.jpg",
+          "08fd33_3_3_png.rf.128b8280598b9931fdeeed42b5be4c51.jpg",
+          4
+        ],
+        [
+          "2e57b9_3_9_png.rf.5c12f6759d5e1f1d57be5342be6f45b0.jpg",
+          "2e57b9_3_10_png.rf.f85ed097b3476e84600e0a9409959cf4.jpg",
+          4
+        ],
+        [
+          "2e57b9_3_9_png.rf.5c12f6759d5e1f1d57be5342be6f45b0.jpg",
+          "2e57b9_3_8_png.rf.6896c68ab1045f7595468d06c0021b79.jpg",
+          4
+        ],
+        [
+          "798b45_1_3_png.rf.80bf528e5e81844dccba8e75a655da8c.jpg",
+          "798b45_1_1_png.rf.8439a1c181599a0556904a92fd89bd81.jpg",
+          4
+        ]
+      ],
+      "class_distribution": {
+        "referee": 1519,
+        "player": 13241,
+        "goalkeeper": 473,
+        "ball": 565
+      },
+      "ball_stats_px": {
+        "count": 565,
+        "median_w_px": 11.0,
+        "median_h_px": 11.8,
+        "p10_w_px": 8.6,
+        "median_at_640px": 3.7,
+        "median_at_1280px": 7.3
+      }
+    },
+    "pitch_dataset": {
+      "kpt_shape": [
+        32,
+        3
+      ],
+      "splits": {
+        "train": {
+          "images": 255,
+          "valid_labels": 255,
+          "corrupt_labels": 0
+        },
+        "val": {
+          "images": 34,
+          "valid_labels": 34,
+          "corrupt_labels": 0
+        },
+        "test": {
+          "images": 28,
+          "valid_labels": 28,
+          "corrupt_labels": 0
+        }
+      },
+      "visible_kpts_per_img_median": 16.0,
+      "frames_with_ge4_kpts_pct": 100.0
+    }
+  },
+  "experiments": {
+    "exp0_coco_baseline": {
+      "model": "yolo11m.pt (COCO Pretrained Zero-Shot)",
+      "imgsz": 640,
+      "per_class_iou50": {
+        "ball": {
+          "class_id": 0,
+          "tp": 0,
+          "fp": 0,
+          "fn": 35,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "goalkeeper": {
+          "class_id": 1,
+          "tp": 0,
+          "fp": 0,
+          "fn": 27,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "player": {
+          "class_id": 2,
+          "tp": 565,
+          "fp": 134,
+          "fn": 189,
+          "precision": 0.8083,
+          "recall": 0.7493,
+          "f1": 0.7777
+        },
+        "referee": {
+          "class_id": 3,
+          "tp": 0,
+          "fp": 0,
+          "fn": 89,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    },
+    "exp2_match_detector_1280": {
+      "model": "yolo11m.pt",
+      "imgsz": 1280,
+      "overall_mAP50": 0.8976,
+      "overall_mAP50_95": 0.6824,
+      "per_class_map": {
+        "ball": {
+          "mAP50": 0.6333,
+          "mAP50_95": 0.3527
+        },
+        "goalkeeper": {
+          "mAP50": 0.9782,
+          "mAP50_95": 0.8224
+        },
+        "player": {
+          "mAP50": 0.9943,
+          "mAP50_95": 0.8348
+        },
+        "referee": {
+          "mAP50": 0.9846,
+          "mAP50_95": 0.7197
+        }
+      },
+      "per_class_calibrated_iou50": {
+        "ball": {
+          "class_id": 0,
+          "tp": 21,
+          "fp": 1,
+          "fn": 14,
+          "precision": 0.9545,
+          "recall": 0.6,
+          "f1": 0.7368
+        },
+        "goalkeeper": {
+          "class_id": 1,
+          "tp": 26,
+          "fp": 1,
+          "fn": 1,
+          "precision": 0.963,
+          "recall": 0.963,
+          "f1": 0.963
+        },
+        "player": {
+          "class_id": 2,
+          "tp": 745,
+          "fp": 5,
+          "fn": 9,
+          "precision": 0.9933,
+          "recall": 0.9881,
+          "f1": 0.9907
+        },
+        "referee": {
+          "class_id": 3,
+          "tp": 88,
+          "fp": 1,
+          "fn": 1,
+          "precision": 0.9888,
+          "recall": 0.9888,
+          "f1": 0.9888
+        }
+      },
+      "ball_missed_val_frames": 14
+    }
+  },
+  "optimal_thresholds": {
+    "ball": 0.35,
+    "goalkeeper": 0.5,
+    "player": 0.6,
+    "referee": 0.45
+  },
+  "pitch_geometry_eval": {
+    "pose_mAP50": 0.9255,
+    "pose_mAP50_95": 0.3771,
+    "mean_pixel_error_px": 13.86,
+    "median_pixel_error_px": 10.35,
+    "pck_5px_pct": 17.74,
+    "pck_10px_pct": 47.74,
+    "pck_20px_pct": 86.77,
+    "homography_ready_frames_pct": 97.06,
+    "mean_ransac_reproj_error_px": 32.81
+  },
+  "benchmarks": {
+    "model_1_detector": {
+      "imgsz": 1280,
+      "provider": "CUDAExecutionProvider",
+      "precision": "FP32",
+      "pt_size_mb": 38.71,
+      "onnx_size_mb": 77.19,
+      "pt_latency_ms": 100.9,
+      "pt_fps": 9.9,
+      "onnx_latency_ms": 108.51,
+      "onnx_fps": 9.2,
+      "speedup_x": 0.93
+    },
+    "model_2_pitch_keypoints": {
+      "imgsz": 640,
+      "provider": "CUDAExecutionProvider",
+      "precision": "FP32",
+      "pt_size_mb": 41.31,
+      "onnx_size_mb": 82.09,
+      "pt_latency_ms": 28.86,
+      "pt_fps": 34.7,
+      "onnx_latency_ms": 29.34,
+      "onnx_fps": 34.1,
+      "speedup_x": 0.98
+    }
+  },
+  "updated_at": "2026-11-20T03:31:00.588623+00:00"
+}
