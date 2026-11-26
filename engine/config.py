@@ -146,9 +146,12 @@ class EngineConfig:
     max_valid_speed_kmh: float = 35.5
     max_player_speed_kmh: float = 35.5
     sprint_threshold_kmh: float = 24.0
-    possession_radius_m: float = 2.8
-    min_pass_distance_m: float = 4.0
-    min_owner_frames: int = 3
+    possession_radius_m: float = 3.4
+    min_pass_distance_m: float = 3.0
+    min_owner_frames: int = 2
+    min_turnover_frames: int = 5
+    ball_bridge_max_gap_frames: int = 8
+    ball_bridge_max_speed_mps: float = 38.0
     # Team Classifier & Model 3: Raw-Video Temporal Action Spotting
     enable_siglip: bool = True
     enable_action_spotting: bool = True

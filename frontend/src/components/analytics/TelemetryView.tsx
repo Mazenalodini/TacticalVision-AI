@@ -27,6 +27,7 @@ interface TelemetryViewProps {
   currentTime?: number;
   onSeekToTime?: (timeSec: number) => void;
   onSeekToFrame?: (frame: number) => void;
+  onReplayEvent?: (timeSec: number) => void;
   onSelectPlayerAndJump?: (playerId: number) => void;
 }
 
@@ -44,6 +45,7 @@ export function TelemetryView({
   currentTime = 0,
   onSeekToTime,
   onSeekToFrame,
+  onReplayEvent,
   onSelectPlayerAndJump,
 }: TelemetryViewProps) {
   const { t } = useLang();
@@ -203,8 +205,13 @@ export function TelemetryView({
         {(subTab === "all" || subTab === "passnet") && (
           <div className="space-y-4">
             <D3PassNetworkPitch
+              matchId={matchId}
               telemetry={telemetry}
               onSelectPlayer={onSelectPlayerAndJump}
+              onJumpToPass={(tm, fromId) => {
+                onSelectPlayerAndJump?.(fromId);
+                onReplayEvent?.(tm);
+              }}
             />
           </div>
         )}

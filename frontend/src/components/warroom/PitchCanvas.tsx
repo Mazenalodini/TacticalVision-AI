@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Crosshair } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry } from "@/lib/types";
+import { usePlayerOverrides } from "@/lib/jerseyOverrides";
 import {
   stabilizeTelemetry,
   interpolateStabilizedFrame,
@@ -24,6 +25,7 @@ import { drawPlayers, BallHistoryPoint } from "./canvas/drawPlayers";
 import type { CanvasLayerConfig, LiveTelemetryHud } from "./LayerToggles";
 
 interface PitchCanvasProps {
+  matchId?: string;
   telemetry: Telemetry | null;
   getVideoElement: () => HTMLVideoElement | null;
   layers: CanvasLayerConfig;
@@ -33,6 +35,7 @@ interface PitchCanvasProps {
 }
 
 export function PitchCanvas({
+  matchId,
   telemetry,
   getVideoElement,
   layers,
@@ -41,6 +44,7 @@ export function PitchCanvas({
   onHudUpdate,
 }: PitchCanvasProps) {
   const { t } = useLang();
+  const { overrides } = usePlayerOverrides(matchId);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -140,7 +144,7 @@ export function PitchCanvas({
           }
 
           if (layers.passNetwork && telemetry?.passing_network) {
-            drawPassNetwork(ctx, telemetry, layers.players, vp);
+            drawPassNetwork(ctx, telemetry, layers.players, vp, overrides);
           }
 
           if (layers.players) {
@@ -156,7 +160,9 @@ export function PitchCanvas({
               selectedPlayerId,
               trajectory,
               interpFrame.f,
-              vp
+              vp,
+              null,
+              overrides
             );
           }
 
@@ -189,7 +195,7 @@ export function PitchCanvas({
 
     rafId = window.requestAnimationFrame(renderLoop);
     return () => window.cancelAnimationFrame(rafId);
-  }, [stabilized, telemetry, getVideoElement, layers, selectedPlayerId, onHudUpdate]);
+  }, [stabilized, telemetry, getVideoElement, layers, selectedPlayerId, onHudUpdate, overrides]);
 
   // ── ResizeObserver for HiDPI Crispness ──
   useEffect(() => {

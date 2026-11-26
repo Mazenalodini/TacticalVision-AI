@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play, BadgeCheck, ScanEye } from "lucide-react";
+import { X, Play, BadgeCheck, ScanEye, Pencil, Check, RotateCcw } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry, PlayerStat } from "@/lib/types";
+import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
 import { formatRole, formatTeamName } from "@/lib/format";
 import { BidiNum } from "@/components/ui/BidiNum";
 import { D3PlayerRadar } from "./D3PlayerRadar";
 
 interface PlayerSpotlightProps {
+  matchId?: string;
   selectedPlayerId: number | null;
   telemetry: Telemetry | null;
   currentFrameIndex: number;
@@ -23,6 +25,7 @@ interface PlayerSpotlightProps {
  * 0% of PitchCanvas or VideoPlayer is ever obstructed in desktop or mobile viewports.
  */
 export function PlayerSpotlight({
+  matchId,
   selectedPlayerId,
   telemetry,
   currentFrameIndex,
@@ -30,6 +33,10 @@ export function PlayerSpotlight({
   onSeekToFrame,
 }: PlayerSpotlightProps) {
   const { t, lang } = useLang();
+  const { overrides, setPlayerOverride } = usePlayerOverrides(matchId);
+  const [isEditingId, setIsEditingId] = useState<boolean>(false);
+  const [draftNum, setDraftNum] = useState<string>("");
+  const [draftName, setDraftName] = useState<string>("");
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -102,6 +109,19 @@ export function PlayerSpotlight({
 
   const activeStat = playerStat ?? fallbackStats;
 
+  const identity = useMemo(() => {
+    if (!activeStat) return null;
+    return resolvePlayerIdentity(activeStat.track_id, activeStat, overrides);
+  }, [activeStat, overrides]);
+
+  useEffect(() => {
+    setIsEditingId(false);
+    if (activeStat && identity) {
+      setDraftNum(identity.jerseyNumber != null ? String(identity.jerseyNumber) : "");
+      setDraftName(identity.customName ?? "");
+    }
+  }, [selectedPlayerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const playerEvents = useMemo(() => {
     if (selectedPlayerId === null || !telemetry?.events) return [];
     return telemetry.events.filter((e) => {
@@ -140,19 +160,36 @@ export function PlayerSpotlight({
               <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-white/[0.08]">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
+                    title={
+                      identity?.isVerified
+                        ? identity.isCoachOverride
+                          ? t("jersey.coach_override")
+                          : t("jersey.verified")
+                        : t("jersey.unverified_tip")
+                    }
                     className={`relative w-11 h-11 rounded-xl flex items-center justify-center font-mono font-extrabold text-sm shadow-lg shrink-0 ${
                       isTeam0
-                        ? "bg-tv-cyan text-slate-950 shadow-tv-cyan/25"
-                        : "bg-tv-coral text-white shadow-tv-coral/25"
-                    } ${activeStat.jersey_verified && activeStat.jersey_number != null ? "ring-2 ring-tv-mint/80 ring-offset-2 ring-offset-[#070B14]" : ""}`}
+                        ? identity?.isVerified
+                          ? "bg-tv-cyan text-slate-950 shadow-tv-cyan/25"
+                          : "bg-tv-cyan/35 text-white border border-tv-cyan/50"
+                        : identity?.isVerified
+                        ? "bg-tv-coral text-white shadow-tv-coral/25"
+                        : "bg-tv-coral/35 text-white border border-tv-coral/50"
+                    } ${
+                      identity?.isVerified
+                        ? identity.isCoachOverride
+                          ? "ring-2 ring-tv-amber/85 ring-offset-2 ring-offset-[#070B14]"
+                          : "ring-2 ring-tv-mint/80 ring-offset-2 ring-offset-[#070B14]"
+                        : ""
+                    }`}
                   >
-                    <BidiNum>
-                      {activeStat.jersey_verified && activeStat.jersey_number != null
-                        ? `#${activeStat.jersey_number}`
-                        : `#${activeStat.track_id}`}
-                    </BidiNum>
-                    {activeStat.jersey_verified && activeStat.jersey_number != null && (
-                      <span className="absolute -top-1.5 -end-1.5 w-4 h-4 rounded-full bg-tv-mint text-slate-950 flex items-center justify-center shadow">
+                    <BidiNum>{identity?.badgeText ?? `T${activeStat.track_id}`}</BidiNum>
+                    {identity?.isVerified && (
+                      <span
+                        className={`absolute -top-1.5 -end-1.5 w-4 h-4 rounded-full text-slate-950 flex items-center justify-center shadow ${
+                          identity.isCoachOverride ? "bg-tv-amber" : "bg-tv-mint"
+                        }`}
+                      >
                         <BadgeCheck className="w-3 h-3 stroke-[2.6]" />
                       </span>
                     )}
@@ -161,32 +198,120 @@ export function PlayerSpotlight({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm sm:text-base font-bold text-white">
-                        {formatRole(activeStat.role, lang)}{" "}
-                        <BidiNum>
-                          {activeStat.jersey_verified && activeStat.jersey_number != null
-                            ? `#${activeStat.jersey_number}`
-                            : `#${activeStat.track_id}`}
-                        </BidiNum>
+                        {identity?.customName ? (
+                          <>
+                            <span>{identity.customName}</span>{" "}
+                            <BidiNum className="text-tv-cyan">{identity.badgeText}</BidiNum>
+                          </>
+                        ) : (
+                          <>
+                            {formatRole(activeStat.role, lang)}{" "}
+                            <BidiNum>{identity?.badgeText ?? `T${activeStat.track_id}`}</BidiNum>
+                          </>
+                        )}
                       </h3>
                       <span
                         className={`px-2 py-0.5 rounded-md text-[11px] font-bold border ${teamBadgeClass}`}
                       >
                         {formatTeamName(activeStat.team, lang)}
                       </span>
-                      {activeStat.jersey_verified && activeStat.jersey_number != null ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-tv-mint/15 border border-tv-mint/35 text-tv-mint">
+                      {identity?.isVerified ? (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${
+                            identity.isCoachOverride
+                              ? "bg-tv-amber/15 border-tv-amber/35 text-tv-amber"
+                              : "bg-tv-mint/15 border-tv-mint/35 text-tv-mint"
+                          }`}
+                        >
                           <BadgeCheck className="w-3 h-3 shrink-0" />
-                          <span>{t("jersey.verified")}</span>
+                          <span>
+                            {identity.isCoachOverride
+                              ? t("jersey.coach_override")
+                              : t("jersey.verified")}
+                          </span>
                         </span>
                       ) : (
-                        activeStat.legibility_score != null && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold obsidian-well text-slate-300">
-                            <ScanEye className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span>{t("jersey.track_fallback")}</span>
-                          </span>
-                        )
+                        <span
+                          title={t("jersey.unverified_tip")}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium obsidian-well text-slate-400"
+                        >
+                          <ScanEye className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{t("jersey.track_fallback")}</span>
+                        </span>
+                      )}
+                      {matchId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftNum(
+                              identity?.jerseyNumber != null ? String(identity.jerseyNumber) : ""
+                            );
+                            setDraftName(identity?.customName ?? "");
+                            setIsEditingId((prev) => !prev);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-2.5 h-2.5" />
+                          <span>{t("jersey.edit_btn")}</span>
+                        </button>
                       )}
                     </div>
+
+                    {/* Inline Coach Identity Override Form */}
+                    {isEditingId && matchId && (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const parsed = parseInt(draftNum.trim(), 10);
+                          setPlayerOverride(activeStat.track_id, {
+                            jersey_number:
+                              !isNaN(parsed) && parsed >= 1 && parsed <= 99 ? parsed : null,
+                            custom_name: draftName.trim(),
+                          });
+                          setIsEditingId(false);
+                        }}
+                        className="mt-2.5 p-2.5 rounded-xl obsidian-well border border-tv-cyan/30 flex flex-wrap items-center gap-2"
+                      >
+                        <input
+                          dir="ltr"
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={draftNum}
+                          onChange={(e) => setDraftNum(e.target.value)}
+                          placeholder={t("jersey.edit_num")}
+                          className="w-28 px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/15 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-tv-cyan"
+                        />
+                        <input
+                          type="text"
+                          maxLength={28}
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          placeholder={t("jersey.edit_name")}
+                          className="flex-1 min-w-[140px] px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/15 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-tv-cyan"
+                        />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-tv-mint text-slate-950 font-bold text-xs cursor-pointer hover:bg-tv-mint/90"
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>{t("jersey.save")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPlayerOverride(activeStat.track_id, null);
+                            setDraftNum("");
+                            setDraftName("");
+                            setIsEditingId(false);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 text-xs cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>{t("jersey.reset")}</span>
+                        </button>
+                      </form>
+                    )}
 
                     {/* Live Frame Velocity + Optional Model 4 OCR Telemetry */}
                     <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -208,10 +333,10 @@ export function PlayerSpotlight({
                           {t("spot.sprinting_now")}
                         </span>
                       )}
-                      {activeStat.jersey_verified && activeStat.jersey_number != null && (
+                      {identity?.isVerified && (
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                           <span>{t("jersey.track_fallback")}</span>
-                          <BidiNum className="text-slate-300">#{activeStat.track_id}</BidiNum>
+                          <BidiNum className="text-slate-300">T{activeStat.track_id}</BidiNum>
                         </span>
                       )}
                       {activeStat.jersey_confidence != null && (

@@ -81,6 +81,7 @@ export interface PassEvent {
   end_xy: [number, number];
   distance_m: number;
   xt_delta: number;
+  is_progressive?: boolean;
 }
 
 export interface SprintEvent {

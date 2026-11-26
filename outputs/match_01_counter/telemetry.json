@@ -18,12 +18,12 @@
     },
     "passes": {
       "team_0": 0,
-      "team_1": 9
+      "team_1": 10
     },
-    "turnovers": 2,
+    "turnovers": 0,
     "expected_threat_xt": {
       "team_0": 0.0,
-      "team_1": 0.002
+      "team_1": 0.0047
     },
     "avg_convex_hull_area_m2": {
       "team_0": 962.8,
@@ -105,7 +105,7 @@
       "avg_speed_kmh": 16.0,
       "sprints": 6,
       "passes_completed": 2,
-      "xt_generated": 0.0,
+      "xt_generated": 0.0014,
       "avg_pitch_xy": [
         74.1,
         43.57
@@ -137,7 +137,7 @@
       "avg_speed_kmh": 15.9,
       "sprints": 4,
       "passes_completed": 3,
-      "xt_generated": 0.002,
+      "xt_generated": 0.0033,
       "avg_pitch_xy": [
         75.37,
         26.3
@@ -184,7 +184,7 @@
       "max_speed_kmh": 37.4,
       "avg_speed_kmh": 15.5,
       "sprints": 4,
-      "passes_completed": 0,
+      "passes_completed": 1,
       "xt_generated": 0.0,
       "avg_pitch_xy": [
         38.04,
@@ -400,6 +400,12 @@
     },
     {
       "team": 1,
+      "from_id": 2,
+      "to_id": 15,
+      "count": 1
+    },
+    {
+      "team": 1,
       "from_id": 15,
       "to_id": 7,
       "count": 1
@@ -432,21 +438,22 @@
   "events": [
     {
       "type": "pass",
-      "frame": 33,
-      "time_s": 1.32,
+      "frame": 32,
+      "time_s": 1.28,
       "team": 1,
       "from_id": 8,
       "to_id": 7,
       "start_xy": [
-        72.79,
-        38.93
+        72.51,
+        37.43
       ],
       "end_xy": [
         73.61,
         45.49
       ],
-      "distance_m": 6.6,
-      "xt_delta": -0.0002
+      "distance_m": 8.1,
+      "xt_delta": -0.0002,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -458,21 +465,22 @@
     },
     {
       "type": "pass",
-      "frame": 89,
-      "time_s": 3.56,
+      "frame": 88,
+      "time_s": 3.52,
       "team": 1,
       "from_id": 7,
       "to_id": 2,
       "start_xy": [
-        69.42,
-        50.69
+        70.68,
+        49.81
       ],
       "end_xy": [
         58.38,
         60.48
       ],
-      "distance_m": 14.8,
-      "xt_delta": -0.0002
+      "distance_m": 16.3,
+      "xt_delta": 0.0014,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -643,28 +651,23 @@
       "speed_kmh": 28.3
     },
     {
-      "type": "turnover",
-      "frame": 153,
-      "time_s": 6.12,
-      "from_team": 1,
-      "to_team": 0,
-      "by_id": 13,
-      "xy": [
-        49.31,
-        56.39
-      ]
-    },
-    {
-      "type": "turnover",
-      "frame": 162,
-      "time_s": 6.48,
-      "from_team": 0,
-      "to_team": 1,
-      "by_id": 15,
-      "xy": [
+      "type": "pass",
+      "frame": 161,
+      "time_s": 6.44,
+      "team": 1,
+      "from_id": 2,
+      "to_id": 15,
+      "start_xy": [
+        49.03,
+        56.91
+      ],
+      "end_xy": [
         50.61,
         51.76
-      ]
+      ],
+      "distance_m": 5.4,
+      "xt_delta": 0.0,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -762,15 +765,16 @@
       "from_id": 15,
       "to_id": 7,
       "start_xy": [
-        55.76,
-        48.68
+        53.44,
+        48.43
       ],
       "end_xy": [
-        65.56,
-        51.2
+        64.58,
+        43.23
       ],
-      "distance_m": 10.1,
-      "xt_delta": -0.0021
+      "distance_m": 12.3,
+      "xt_delta": -0.0016,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -803,6 +807,25 @@
       "track_id": 26,
       "team": 0,
       "speed_kmh": 26.4
+    },
+    {
+      "type": "pass",
+      "frame": 259,
+      "time_s": 10.36,
+      "team": 1,
+      "from_id": 7,
+      "to_id": 3,
+      "start_xy": [
+        67.13,
+        47.29
+      ],
+      "end_xy": [
+        67.5,
+        23.8
+      ],
+      "distance_m": 23.5,
+      "xt_delta": 0.0,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -883,24 +906,6 @@
       "track_id": 20,
       "team": 0,
       "speed_kmh": 26.1
-    },
-    {
-      "type": "pass",
-      "frame": 260,
-      "time_s": 10.4,
-      "team": 1,
-      "from_id": 7,
-      "to_id": 3,
-      "start_xy": [
-        67.43,
-        45.51
-      ],
-      "end_xy": [
-        67.5,
-        23.8
-      ],
-      "distance_m": 21.7,
-      "xt_delta": 0.0
     },
     {
       "type": "sprint",
@@ -1072,21 +1077,22 @@
     },
     {
       "type": "pass",
-      "frame": 354,
-      "time_s": 14.16,
+      "frame": 353,
+      "time_s": 14.12,
       "team": 1,
       "from_id": 3,
       "to_id": 9,
       "start_xy": [
-        23.7,
-        0.0
+        58.66,
+        8.0
       ],
       "end_xy": [
         59.0,
         14.03
       ],
-      "distance_m": 38.0,
-      "xt_delta": -0.0137
+      "distance_m": 6.0,
+      "xt_delta": 0.0014,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -1234,57 +1240,60 @@
     },
     {
       "type": "pass",
-      "frame": 431,
-      "time_s": 17.24,
+      "frame": 430,
+      "time_s": 17.2,
       "team": 1,
       "from_id": 9,
       "to_id": 3,
       "start_xy": [
-        61.99,
-        15.15
+        61.1,
+        15.2
       ],
       "end_xy": [
         79.55,
         18.38
       ],
-      "distance_m": 17.8,
-      "xt_delta": -0.0021
+      "distance_m": 18.7,
+      "xt_delta": -0.0038,
+      "is_progressive": false
     },
     {
       "type": "pass",
-      "frame": 505,
-      "time_s": 20.2,
+      "frame": 504,
+      "time_s": 20.16,
       "team": 1,
       "from_id": 3,
       "to_id": 9,
       "start_xy": [
-        74.82,
-        20.32
+        75.49,
+        21.0
       ],
       "end_xy": [
         61.73,
         12.04
       ],
-      "distance_m": 15.5,
-      "xt_delta": 0.0011
+      "distance_m": 16.4,
+      "xt_delta": 0.0011,
+      "is_progressive": false
     },
     {
       "type": "pass",
-      "frame": 623,
-      "time_s": 24.92,
+      "frame": 622,
+      "time_s": 24.88,
       "team": 1,
       "from_id": 9,
       "to_id": 3,
       "start_xy": [
-        64.56,
-        14.16
+        62.96,
+        12.71
       ],
       "end_xy": [
         80.78,
         24.32
       ],
-      "distance_m": 19.1,
-      "xt_delta": -0.0021
+      "distance_m": 21.3,
+      "xt_delta": -0.0021,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -1399,30 +1408,31 @@
       "speed_kmh": 29.5
     },
     {
+      "type": "pass",
+      "frame": 719,
+      "time_s": 28.76,
+      "team": 1,
+      "from_id": 3,
+      "to_id": 7,
+      "start_xy": [
+        80.32,
+        28.67
+      ],
+      "end_xy": [
+        72.12,
+        46.07
+      ],
+      "distance_m": 19.2,
+      "xt_delta": 0.0009,
+      "is_progressive": false
+    },
+    {
       "type": "sprint",
       "frame": 719,
       "time_s": 28.76,
       "track_id": 14,
       "team": 0,
       "speed_kmh": 34.7
-    },
-    {
-      "type": "pass",
-      "frame": 720,
-      "time_s": 28.8,
-      "team": 1,
-      "from_id": 3,
-      "to_id": 7,
-      "start_xy": [
-        81.55,
-        30.9
-      ],
-      "end_xy": [
-        72.12,
-        46.07
-      ],
-      "distance_m": 17.9,
-      "xt_delta": 0.0009
     },
     {
       "type": "sprint",

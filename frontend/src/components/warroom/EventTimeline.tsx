@@ -2,39 +2,54 @@
 
 import React, { useMemo, useState } from "react";
 import { useLang } from "@/context/LangContext";
-import type { ActionSpottingEvent, MatchEvent } from "@/lib/types";
+import type { ActionSpottingEvent, MatchEvent, PlayerStat } from "@/lib/types";
 import {
   getActionCategoryLabel,
   getActionClassLabel,
   getCategoryMeta,
 } from "@/lib/actionSpottingHelpers";
+import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
 import { formatTeamName } from "@/lib/format";
 import { BidiNum } from "@/components/ui/BidiNum";
 
 export type EventFilterType = "all" | "broadcast" | "pass" | "turnover" | "sprint";
 
 interface EventTimelineProps {
+  matchId?: string;
   events: MatchEvent[];
   broadcastEvents?: ActionSpottingEvent[];
+  players?: PlayerStat[];
   currentTime: number;
   duration_s: number;
   onSeekToFrame: (frame: number) => void;
   onSeekToTime: (timeSec: number) => void;
+  onReplayEvent?: (timeSec: number) => void;
   onSelectPlayer?: (playerId: number | null) => void;
   docked?: boolean;
 }
 
 export function EventTimeline({
+  matchId,
   events,
   broadcastEvents = [],
+  players = [],
   currentTime,
   duration_s = 30.0,
   onSeekToFrame,
   onSeekToTime,
+  onReplayEvent,
   onSelectPlayer,
   docked = false,
 }: EventTimelineProps) {
   const { t, lang, dir } = useLang();
+  const { overrides } = usePlayerOverrides(matchId);
+  const statMap = useMemo(() => {
+    const m = new Map<number, PlayerStat>();
+    for (const p of players) m.set(p.track_id, p);
+    return m;
+  }, [players]);
+  const playerLabel = (tid: number) =>
+    resolvePlayerIdentity(tid, statMap.get(tid) ?? null, overrides).badgeText;
   const [filterType, setFilterType] = useState<EventFilterType>("all");
   const [hoveredEvent, setHoveredEvent] = useState<{
     kind: "spatial";
@@ -234,7 +249,11 @@ export function EventTimeline({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSeekToFrame(evt.frame);
+                if (onReplayEvent) {
+                  onReplayEvent(evt.time_s);
+                } else {
+                  onSeekToFrame(evt.frame);
+                }
                 if (isSprint && onSelectPlayer) {
                   onSelectPlayer(evt.track_id);
                 } else if (isPass && onSelectPlayer) {
@@ -270,7 +289,11 @@ export function EventTimeline({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSeekToTime(bev.time_s);
+                if (onReplayEvent) {
+                  onReplayEvent(bev.time_s);
+                } else {
+                  onSeekToTime(bev.time_s);
+                }
               }}
               onMouseEnter={(e) => {
                 e.stopPropagation();
@@ -321,6 +344,8 @@ export function EventTimeline({
                   <BidiNum className="text-tv-cyan font-semibold">
                     {`${hoveredEvent.event.time_s.toFixed(1)}s`}
                   </BidiNum>
+                  <span>·</span>
+                  <span className="text-tv-cyan font-bold">{t("evt.replay_3s")}</span>
                 </div>
               </>
             ) : (
@@ -349,8 +374,9 @@ export function EventTimeline({
 
                 {hoveredEvent.event.type === "pass" && (
                   <BidiNum className="text-[11px] text-slate-200">
-                    #{hoveredEvent.event.from_id} → #{hoveredEvent.event.to_id} ·{" "}
-                    {hoveredEvent.event.distance_m}m · xT{" "}
+                    {`${playerLabel(hoveredEvent.event.from_id)} → ${playerLabel(
+                      hoveredEvent.event.to_id
+                    )} · ${hoveredEvent.event.distance_m}m · xT `}
                     <span
                       className={
                         hoveredEvent.event.xt_delta >= 0
@@ -368,8 +394,8 @@ export function EventTimeline({
                 {hoveredEvent.event.type === "sprint" && (
                   <div className="text-[11px] text-tv-mint font-semibold flex items-center gap-1.5">
                     <span>
-                      {t("evt.player_num")}
-                      <BidiNum>{hoveredEvent.event.track_id}</BidiNum>
+                      {t("evt.player_num")}{" "}
+                      <BidiNum>{playerLabel(hoveredEvent.event.track_id)}</BidiNum>
                     </span>
                     <span>·</span>
                     <span className="inline-flex items-baseline gap-1">
@@ -382,8 +408,8 @@ export function EventTimeline({
                 {hoveredEvent.event.type === "turnover" && (
                   <div className="text-[11px] text-tv-amber font-semibold flex items-center gap-1.5">
                     <span>
-                      {t("evt.recovery_by")}
-                      <BidiNum>{hoveredEvent.event.by_id}</BidiNum>
+                      {t("evt.recovery_by")}{" "}
+                      <BidiNum>{playerLabel(hoveredEvent.event.by_id)}</BidiNum>
                     </span>
                     <span className="text-slate-400">
                       ({formatTeamName(hoveredEvent.event.from_team, lang)} →{" "}

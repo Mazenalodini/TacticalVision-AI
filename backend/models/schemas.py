@@ -91,6 +91,7 @@ class PassEvent(BaseModel):
     end_xy: list[float]
     distance_m: float
     xt_delta: float
+    is_progressive: bool = False
 
 
 class SprintEvent(BaseModel):

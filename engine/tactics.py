@@ -21,6 +21,198 @@ def lookup_xt(x_m: float, y_m: float, team: int, pitch: FIFAPitchConfig) -> floa
     return float(XT_GRID[row, col])
 
 
+def bridge_ball_pitch_trajectory(
+    raw_ball_pitch: List[Optional[np.ndarray]],
+    fps: float,
+    max_gap_frames: int = 8,
+    max_speed_mps: float = 38.0,
+    pitch_length: float = 105.0,
+    pitch_width: float = 68.0,
+) -> List[Optional[np.ndarray]]:
+    """
+    Linearly bridges short ball-detection dropouts (1..max_gap_frames missing frames) in metric
+    pitch space when the implied flight speed is physically plausible, so fast passes in flight
+    do not reset the possession/pass state machine.
+    """
+    out: List[Optional[np.ndarray]] = [
+        None if b is None else np.asarray(b, dtype=np.float32).copy() for b in raw_ball_pitch
+    ]
+    fps = max(1.0, float(fps))
+    last_idx: Optional[int] = None
+    for i, b in enumerate(out):
+        if b is None:
+            continue
+        if last_idx is not None:
+            missing = i - last_idx - 1
+            if 1 <= missing <= max_gap_frames:
+                a = out[last_idx]
+                dist = float(np.linalg.norm(b - a))
+                dt = (i - last_idx) / fps
+                if dt > 0 and dist / dt <= max_speed_mps:
+                    for g in range(1, missing + 1):
+                        r = g / float(i - last_idx)
+                        p = a + (b - a) * r
+                        p[0] = float(np.clip(p[0], 0.0, pitch_length))
+                        p[1] = float(np.clip(p[1], 0.0, pitch_width))
+                        out[last_idx + g] = p.astype(np.float32)
+        last_idx = i
+    return out
+
+
+def is_progressive_pass(
+    start_xy: Any,
+    end_xy: Any,
+    team: int,
+    pitch_length: float = 105.0,
+) -> bool:
+    """
+    Progressive pass: advances the ball toward the opponent goal by >= 10m ending in the
+    opponent half, or by >= 15m anywhere. Team 0 attacks L->R, Team 1 attacks R->L.
+    """
+    half = pitch_length / 2.0
+    sx, ex = float(start_xy[0]), float(end_xy[0])
+    if int(team) == 0:
+        advance = ex - sx
+        in_opp_half = ex >= half
+    else:
+        advance = sx - ex
+        in_opp_half = ex <= half
+    return bool((advance >= 10.0 and in_opp_half) or advance >= 15.0)
+
+
+def extract_possession_and_passes(
+    frames_players: List[List[Tuple[int, int, float, float]]],
+    ball_xy: List[Optional[np.ndarray]],
+    fps: float,
+    cfg: EngineConfig,
+    pitch: FIFAPitchConfig,
+) -> Dict[str, Any]:
+    """
+    Possession + pass + turnover state machine with asymmetric hysteresis.
+
+    frames_players: per-frame list of (track_id, team, x_m, y_m) for players/goalkeepers.
+    ball_xy: per-frame ball pitch position (already bridged) or None.
+
+    - Same-team reception confirms after `min_owner_frames`.
+    - Opponent takeover requires `min_turnover_frames` (or 3 frames within 1.6m for a clean
+      tackle), so 2-4 frame defender brushes during a pass never break a same-team pass chain.
+    - The passer's release point is updated on every frame they keep the ball.
+    """
+    fps = max(1.0, float(fps))
+    radius = float(cfg.possession_radius_m)
+    min_same = max(1, int(cfg.min_owner_frames))
+    min_turn = max(min_same, int(getattr(cfg, "min_turnover_frames", 5)))
+    min_pass_d = float(cfg.min_pass_distance_m)
+
+    possession_frames = {0: 0, 1: 0}
+    owner_team_per_frame: List[int] = []
+    passes: List[dict] = []
+    interceptions: List[dict] = []
+    passing_edges: Dict[Tuple[int, int, int], int] = defaultdict(int)
+    team_xt = {0: 0.0, 1: 0.0}
+    player_pass_stats: Dict[int, Dict[str, float]] = defaultdict(lambda: {"passes": 0, "xt": 0.0})
+
+    confirmed: Optional[Tuple[int, int, np.ndarray, int]] = None  # (tid, team, release_xy, frame)
+    cand_tid: Optional[int] = None
+    cand_streak = 0
+    cand_min_d = 1e9
+    cand_start_f = 0
+
+    for f_idx, players in enumerate(frames_players):
+        bp = ball_xy[f_idx] if f_idx < len(ball_xy) else None
+        if bp is None or not players:
+            owner_team_per_frame.append(-1)
+            continue
+        bp = np.asarray(bp, dtype=np.float32)
+
+        best_d, best_tid, best_tm = 1e9, None, -1
+        for tid, tm, x, y in players:
+            d = float(np.hypot(x - bp[0], y - bp[1]))
+            if d < best_d:
+                best_d, best_tid, best_tm = d, int(tid), int(tm)
+
+        if best_tid is None or best_d > radius:
+            owner_team_per_frame.append(-1)
+            continue
+
+        possession_frames[best_tm] += 1
+        owner_team_per_frame.append(best_tm)
+
+        if best_tid == cand_tid:
+            cand_streak += 1
+            cand_min_d = min(cand_min_d, best_d)
+        else:
+            cand_tid = best_tid
+            cand_streak = 1
+            cand_min_d = best_d
+            cand_start_f = f_idx
+
+        # Current owner retains possession: only advance the pass release anchor while the ball is
+        # still under close control (<= 1.8m). Do not drag start_xy out along mid-flight toward a receiver.
+        if confirmed is not None and confirmed[0] == best_tid:
+            prev_tid, prev_tm, anchor_xy, _ = confirmed
+            new_anchor = bp.copy() if best_d <= 1.8 else anchor_xy
+            confirmed = (prev_tid, prev_tm, new_anchor, f_idx)
+            continue
+
+        if confirmed is None or confirmed[1] == best_tm:
+            required = min_same
+        else:
+            required = 3 if cand_min_d <= 1.6 else min_turn
+
+        if cand_streak < required:
+            continue
+
+        if confirmed is not None:
+            prev_tid, prev_tm, prev_xy, _prev_f = confirmed
+            if prev_tm == best_tm:
+                pass_dist = float(np.linalg.norm(bp - prev_xy))
+                if pass_dist >= min_pass_d:
+                    xt_delta = lookup_xt(bp[0], bp[1], best_tm, pitch) - lookup_xt(prev_xy[0], prev_xy[1], best_tm, pitch)
+                    start_xy = [round(float(prev_xy[0]), 2), round(float(prev_xy[1]), 2)]
+                    end_xy = [round(float(bp[0]), 2), round(float(bp[1]), 2)]
+                    recv_f = int(cand_start_f)
+                    passes.append({
+                        "type": "pass",
+                        "frame": recv_f,
+                        "time_s": round(recv_f / fps, 2),
+                        "team": best_tm,
+                        "from_id": prev_tid,
+                        "to_id": best_tid,
+                        "start_xy": start_xy,
+                        "end_xy": end_xy,
+                        "distance_m": round(pass_dist, 1),
+                        "xt_delta": round(float(xt_delta), 4),
+                        "is_progressive": is_progressive_pass(start_xy, end_xy, best_tm, pitch.length),
+                    })
+                    passing_edges[(best_tm, prev_tid, best_tid)] += 1
+                    team_xt[best_tm] += max(0.0, float(xt_delta))
+                    player_pass_stats[prev_tid]["passes"] += 1
+                    player_pass_stats[prev_tid]["xt"] += max(0.0, float(xt_delta))
+            else:
+                tf = int(cand_start_f)
+                interceptions.append({
+                    "type": "turnover",
+                    "frame": tf,
+                    "time_s": round(tf / fps, 2),
+                    "from_team": prev_tm,
+                    "to_team": best_tm,
+                    "by_id": best_tid,
+                    "xy": [round(float(bp[0]), 2), round(float(bp[1]), 2)],
+                })
+        confirmed = (best_tid, best_tm, bp.copy(), f_idx)
+
+    return {
+        "possession_frames": possession_frames,
+        "owner_team_per_frame": owner_team_per_frame,
+        "passes": passes,
+        "interceptions": interceptions,
+        "passing_edges": dict(passing_edges),
+        "team_xt": team_xt,
+        "player_pass_stats": {k: dict(v) for k, v in player_pass_stats.items()},
+    }
+
+
 class TacticalAnalyticsEngine:
     """
     Extracts complete physical & tactical intelligence from stabilized metric coordinates:
@@ -216,19 +408,57 @@ class TacticalAnalyticsEngine:
                     "legibility_score": jinfo.get("legibility_score"),
                 }
 
-        # 3. Frame-by-Frame Possession, Passes, Interceptions, Hull, Defensive Line & Voronoi
-        possession_frames = {0: 0, 1: 0}
+        # 3. Possession, Passes & Turnovers (bridged ball + asymmetric hysteresis state machine)
         voronoi_history = {0: [], 1: [], "def": [], "mid": [], "att": []}
         hull_areas = {0: [], 1: []}
 
-        # Pass detection state machine
-        confirmed_owner: Optional[Tuple[int, int, np.ndarray, int]] = None  # (tid, team, ball_xy, frame)
-        candidate_tid: Optional[int] = None
-        candidate_streak = 0
-        passes = []
-        interceptions = []
-        passing_edges = defaultdict(int)
-        team_xt = {0: 0.0, 1: 0.0}
+        frames_players_pos: List[List[Tuple[int, int, float, float]]] = []
+        raw_ball_pitch: List[Optional[np.ndarray]] = []
+        for rec in frame_records:
+            fp_list = []
+            for ent in rec["entities"]:
+                px = ent.get("pitch_xy")
+                tm = int(ent.get("team", -1))
+                if px is None or tm not in (0, 1):
+                    continue
+                if ent["cls"] not in (self.cfg.player_id, self.cfg.goalkeeper_id):
+                    continue
+                fp_list.append((int(ent["track_id"]), tm, float(px[0]), float(px[1])))
+            frames_players_pos.append(fp_list)
+            bpx = rec.get("ball_pitch_xy")
+            raw_ball_pitch.append(None if bpx is None else np.asarray(bpx, dtype=np.float32))
+
+        bridged_ball = bridge_ball_pitch_trajectory(
+            raw_ball_pitch,
+            self.fps,
+            max_gap_frames=int(getattr(self.cfg, "ball_bridge_max_gap_frames", 8)),
+            max_speed_mps=float(getattr(self.cfg, "ball_bridge_max_speed_mps", 38.0)),
+            pitch_length=self.pitch.length,
+            pitch_width=self.pitch.width,
+        )
+        poss_res = extract_possession_and_passes(
+            frames_players_pos, bridged_ball, self.fps, self.cfg, self.pitch
+        )
+        possession_frames = poss_res["possession_frames"]
+        owner_team_per_frame = poss_res["owner_team_per_frame"]
+        passes = poss_res["passes"]
+        interceptions = poss_res["interceptions"]
+        passing_edges = poss_res["passing_edges"]
+        team_xt = poss_res["team_xt"]
+        for tid, ps in poss_res["player_pass_stats"].items():
+            if tid in player_stats:
+                player_stats[tid]["passes_completed"] = int(ps["passes"])
+                player_stats[tid]["xt_generated"] = round(float(ps["xt"]), 4)
+
+        # Cumulative per-frame counters for broadcast HUD
+        n_rec = len(frame_records)
+        cum_pass = {0: np.zeros(n_rec + 1, dtype=np.int32), 1: np.zeros(n_rec + 1, dtype=np.int32)}
+        for p in passes:
+            fi = min(n_rec, max(0, int(p["frame"])))
+            cum_pass[int(p["team"])][fi] += 1
+        for tm in (0, 1):
+            cum_pass[tm] = np.cumsum(cum_pass[tm])
+        cum_poss = {0: 0, 1: 0}
 
         # Heatmaps (12x8 grid per team)
         heatmaps = {0: np.zeros((8, 12), dtype=np.int32), 1: np.zeros((8, 12), dtype=np.int32)}
@@ -307,84 +537,21 @@ class TacticalAnalyticsEngine:
             voronoi_history["mid"].append(vor_metrics["team_0_mid_third_pct"])
             voronoi_history["att"].append(vor_metrics["team_0_att_third_pct"])
 
-            # Ball Ownership, Passes & Interceptions
-            ball_p = rec.get("ball_pitch_xy")
-            ball_owner_team = -1
-            if ball_p is not None and len(all_xy_arr) > 0:
-                bp = np.array(ball_p, dtype=np.float32)
-                # Find nearest player with track_id
-                best_d = 1e9
-                best_tid, best_tm = None, -1
-                for ent in rec["entities"]:
-                    px = ent.get("pitch_xy")
-                    tm = int(ent.get("team", -1))
-                    if px is None or tm not in (0, 1):
-                        continue
-                    d = float(np.linalg.norm(bp - np.array(px, dtype=np.float32)))
-                    if d < best_d:
-                        best_d = d
-                        best_tid = int(ent["track_id"])
-                        best_tm = tm
-
-                if best_tid is not None and best_d <= self.cfg.possession_radius_m:
-                    possession_frames[best_tm] += 1
-                    ball_owner_team = best_tm
-
-                    if best_tid == candidate_tid:
-                        candidate_streak += 1
-                    else:
-                        candidate_tid = best_tid
-                        candidate_streak = 1
-
-                    if candidate_streak >= self.cfg.min_owner_frames:
-                        if confirmed_owner is not None and confirmed_owner[0] != best_tid:
-                            prev_tid, prev_tm, prev_xy, prev_f = confirmed_owner
-                            pass_dist = float(np.linalg.norm(bp - prev_xy))
-                            if prev_tm == best_tm and pass_dist >= self.cfg.min_pass_distance_m:
-                                xt_delta = lookup_xt(bp[0], bp[1], best_tm, self.pitch) - lookup_xt(prev_xy[0], prev_xy[1], best_tm, self.pitch)
-                                pass_evt = {
-                                    "type": "pass",
-                                    "frame": f_idx,
-                                    "time_s": round(f_idx / self.fps, 2),
-                                    "team": best_tm,
-                                    "from_id": prev_tid,
-                                    "to_id": best_tid,
-                                    "start_xy": [round(float(prev_xy[0]), 2), round(float(prev_xy[1]), 2)],
-                                    "end_xy": [round(float(bp[0]), 2), round(float(bp[1]), 2)],
-                                    "distance_m": round(pass_dist, 1),
-                                    "xt_delta": round(float(xt_delta), 4),
-                                }
-                                passes.append(pass_evt)
-                                passing_edges[(best_tm, prev_tid, best_tid)] += 1
-                                team_xt[best_tm] += max(0.0, xt_delta)
-                                if prev_tid in player_stats:
-                                    player_stats[prev_tid]["passes_completed"] += 1
-                                    player_stats[prev_tid]["xt_generated"] = round(
-                                        player_stats[prev_tid]["xt_generated"] + max(0.0, xt_delta), 4
-                                    )
-                            elif prev_tm != best_tm:
-                                interceptions.append({
-                                    "type": "turnover",
-                                    "frame": f_idx,
-                                    "time_s": round(f_idx / self.fps, 2),
-                                    "from_team": prev_tm,
-                                    "to_team": best_tm,
-                                    "by_id": best_tid,
-                                    "xy": [round(float(bp[0]), 2), round(float(bp[1]), 2)],
-                                })
-                        confirmed_owner = (best_tid, best_tm, bp.copy(), f_idx)
-
+            # Ball Ownership & Cumulative HUD stats (from unified bridged state machine)
+            ball_p = bridged_ball[f_idx] if f_idx < len(bridged_ball) else rec.get("ball_pitch_xy")
+            ball_owner_team = owner_team_per_frame[f_idx] if f_idx < len(owner_team_per_frame) else -1
+            if ball_owner_team in (0, 1):
+                cum_poss[ball_owner_team] += 1
             rec["ball_owner_team"] = ball_owner_team
 
-            # Running cumulative HUD stats for broadcast overlay
-            tot_pos = possession_frames[0] + possession_frames[1]
+            tot_pos_so_far = cum_poss[0] + cum_poss[1]
             rec["hud_stats"] = {
-                "pos_0": round(100.0 * possession_frames[0] / max(1, tot_pos), 1) if tot_pos else 50.0,
-                "pos_1": round(100.0 * possession_frames[1] / max(1, tot_pos), 1) if tot_pos else 50.0,
+                "pos_0": round(100.0 * cum_poss[0] / max(1, tot_pos_so_far), 1) if tot_pos_so_far else 50.0,
+                "pos_1": round(100.0 * cum_poss[1] / max(1, tot_pos_so_far), 1) if tot_pos_so_far else 50.0,
                 "ctrl_0": vor_metrics["team_0_pct"],
                 "ctrl_1": vor_metrics["team_1_pct"],
-                "passes_0": sum(1 for p in passes if p["team"] == 0),
-                "passes_1": sum(1 for p in passes if p["team"] == 1),
+                "passes_0": int(cum_pass[0][f_idx]),
+                "passes_1": int(cum_pass[1][f_idx]),
             }
 
             timeline_frames.append({

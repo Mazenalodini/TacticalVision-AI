@@ -110,11 +110,12 @@ class BroadcastRenderer:
                 lineType=cv2.LINE_AA,
             )
 
-            # Compact dark badge showing locked Jersey Number when verified, else Track ID
+            # Honest Identity Badge: `#jn` (verified) vs `T{tid}` (unverified ByteTrack fallback)
             jn = ent.get("jersey_number")
             jv = bool(ent.get("jersey_verified", False))
-            badge_text = f"#{jn}" if (jv and jn is not None) else f"#{tid}"
-            badge_border = (130, 230, 120) if (jv and jn is not None) else col
+            is_verified = jv and jn is not None
+            badge_text = f"#{jn}" if is_verified else f"T{tid}"
+            badge_border = (130, 230, 120) if is_verified else (115, 130, 148)
             (tw, th), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
             bx1, by1 = cx - tw // 2 - 4, y2 + 5
             bx2, by2 = cx + tw // 2 + 4, y2 + th + 10
@@ -224,7 +225,7 @@ class BroadcastRenderer:
                 cv2.circle(radar, (rx, ry), radius, (15, 20, 25), 2, cv2.LINE_AA)
                 jn = ent.get("jersey_number")
                 jv = bool(ent.get("jersey_verified", False))
-                lbl = str(jn) if (jv and jn is not None) else str(ent["track_id"])
+                lbl = f"#{jn}" if (jv and jn is not None) else f"T{ent['track_id']}"
                 cv2.putText(radar, lbl, (rx - 7, ry + 4),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
 

@@ -112,6 +112,15 @@ export default function WarRoomPage({
     setCurrentFrame(frame);
   }, []);
 
+  const handleReplayEvent = useCallback((timeSec: number) => {
+    const startSec = Math.max(0, timeSec - 3.0);
+    videoPlayerRef.current?.seekToTime(startSec);
+    videoPlayerRef.current?.play();
+    if (typeof window !== "undefined" && window.scrollY > 260) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, []);
+
   const getVideoElement = useCallback(() => {
     return videoPlayerRef.current?.getVideoElement() ?? null;
   }, []);
@@ -313,12 +322,15 @@ export default function WarRoomPage({
 
                   {telemetry?.events && (
                     <EventTimeline
+                      matchId={match.id}
                       events={telemetry.events}
                       broadcastEvents={telemetry.broadcast_events}
+                      players={telemetry.players}
                       currentTime={currentTime}
                       duration_s={match.duration_s || 30.0}
                       onSeekToFrame={(f) => videoPlayerRef.current?.seekToFrame(f)}
                       onSeekToTime={(tm) => videoPlayerRef.current?.seekToTime(tm)}
+                      onReplayEvent={handleReplayEvent}
                       onSelectPlayer={(id) => setSelectedPlayerId(id)}
                       docked
                     />
@@ -338,6 +350,7 @@ export default function WarRoomPage({
 
                 <div className="rounded-xl overflow-hidden border border-white/[0.09] shadow-inner">
                   <PitchCanvas
+                    matchId={match.id}
                     telemetry={telemetry}
                     getVideoElement={getVideoElement}
                     layers={layers}
@@ -353,6 +366,7 @@ export default function WarRoomPage({
 
             {/* ── Inline Docked Player Inspector Panel (0% Radar Obstruction!) ── */}
             <PlayerSpotlight
+              matchId={match.id}
               selectedPlayerId={selectedPlayerId}
               telemetry={telemetry}
               currentFrameIndex={currentFrame}
@@ -421,11 +435,14 @@ export default function WarRoomPage({
                   />
                   {telemetry?.events && (
                     <EventFeed
+                      matchId={match.id}
                       events={telemetry.events}
                       broadcastEvents={telemetry.broadcast_events}
+                      players={telemetry.players}
                       currentTime={currentTime}
                       onSeekToFrame={(f) => videoPlayerRef.current?.seekToFrame(f)}
                       onSeekToTime={(tm) => videoPlayerRef.current?.seekToTime(tm)}
+                      onReplayEvent={handleReplayEvent}
                       onSelectPlayer={(id) => setSelectedPlayerId(id)}
                     />
                   )}
@@ -434,10 +451,15 @@ export default function WarRoomPage({
 
               {lowerTab === "passnet" && (
                 <D3PassNetworkPitch
+                  matchId={match.id}
                   telemetry={telemetry}
                   onSelectPlayer={(id) => {
                     setSelectedPlayerId(id);
                     window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  onJumpToPass={(tm, fromId) => {
+                    setSelectedPlayerId(fromId);
+                    handleReplayEvent(tm);
                   }}
                 />
               )}
@@ -459,6 +481,12 @@ export default function WarRoomPage({
               setTimeout(() => {
                 videoPlayerRef.current?.seekToFrame(f);
               }, 60);
+            }}
+            onReplayEvent={(tm) => {
+              setActiveTab("warroom");
+              setTimeout(() => {
+                handleReplayEvent(tm);
+              }, 80);
             }}
             onSelectPlayerAndJump={(id) => {
               setSelectedPlayerId(id);

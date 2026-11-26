@@ -128,3 +128,12 @@ def test_weighted_tracklet_voting_and_offline_fallback():
     assert voted["jersey_verified"] is True
     assert voted["jersey_number"] == 10
     assert voted["jersey_confidence"] is not None and voted["jersey_confidence"] > 0.0
+
+    # Ultra-tiny (<14px) crop should be rejected safely by _enhance_torso_bgr
+    tiny = np.zeros((10, 10, 3), dtype=np.uint8)
+    assert rec._enhance_torso_bgr(tiny) is None
+
+    # Single-digit read requires stronger confidence (>=0.55) to prevent noisy hallucinations
+    assert rec._is_accepted_digit_read(8, 0.40) is False
+    assert rec._is_accepted_digit_read(8, 0.65) is True
+    assert rec._is_accepted_digit_read(22, 0.40) is True

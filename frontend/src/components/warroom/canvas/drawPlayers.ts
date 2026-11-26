@@ -1,4 +1,5 @@
 import { FramePlayer } from "@/lib/types";
+import { resolvePlayerIdentity, type MatchOverridesMap } from "@/lib/jerseyOverrides";
 import { FIFA_PITCH, PitchViewport, pitchToCanvas } from "./pitchConfig";
 
 export interface BallHistoryPoint {
@@ -27,7 +28,8 @@ export function drawPlayers(
   trajectory: PlayerTrajectoryPoint[] | undefined,
   currentFrameIndex: number,
   vp: PitchViewport,
-  hoveredPlayerId: number | null = null
+  hoveredPlayerId: number | null = null,
+  overrides?: MatchOverridesMap
 ) {
   // ── 0. Selected Player Discontinuity-Safe Trajectory Path ──
   if (selectedPlayerId !== null && trajectory && trajectory.length > 1) {
@@ -237,34 +239,37 @@ export function drawPlayers(
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // Verified Model 4 Jersey Ring + Mint Lock Indicator
-    const hasVerifiedJersey = Boolean(player.jv && player.jn != null);
-    if (hasVerifiedJersey) {
+    // Honest Identity: `#jn ✓` when Model 4 or Coach verified, else muted `T{id}` fallback
+    const identity = resolvePlayerIdentity(player.id, player, overrides);
+    if (identity.isVerified) {
       ctx.beginPath();
-      ctx.arc(cx, cy, radius + 1.4, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(52, 211, 153, 0.75)";
-      ctx.lineWidth = 1.25;
+      ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = identity.isCoachOverride ? "#FBBF24" : "rgba(52, 211, 153, 0.85)";
+      ctx.lineWidth = 1.35;
       ctx.stroke();
 
-      // Tiny verified Mint badge pip at top-right shoulder
+      // Tiny verified emerald/gold badge pip at top-right shoulder
       const bx = cx + radius * 0.76;
       const by = cy - radius * 0.76;
       ctx.beginPath();
       ctx.arc(bx, by, 2.7, 0, Math.PI * 2);
-      ctx.fillStyle = "#34D399";
+      ctx.fillStyle = identity.isCoachOverride ? "#FBBF24" : "#34D399";
       ctx.fill();
       ctx.strokeStyle = "#060B10";
       ctx.lineWidth = 0.9;
       ctx.stroke();
     }
 
-    // Razor-sharp Player ID or Verified Jersey Label
-    const displayLabel = hasVerifiedJersey ? `${player.jn}` : `${player.id}`;
-    ctx.fillStyle = isTeam0 ? "#04101A" : "#FFFFFF";
-    ctx.font = "bold 8.8px var(--font-jetbrains), monospace";
+    // Razor-sharp Player ID or Verified Jersey Label (`#jn` vs `T{id}`)
+    ctx.fillStyle = isTeam0
+      ? (identity.isVerified ? "#04101A" : "rgba(4, 16, 26, 0.78)")
+      : (identity.isVerified ? "#FFFFFF" : "rgba(255, 255, 255, 0.82)");
+    ctx.font = identity.isVerified
+      ? "bold 8.8px var(--font-jetbrains), monospace"
+      : "600 7.6px var(--font-jetbrains), monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(displayLabel, cx, cy + 0.5);
+    ctx.fillText(identity.canvasLabel, cx, cy + 0.5);
 
     ctx.restore();
   }

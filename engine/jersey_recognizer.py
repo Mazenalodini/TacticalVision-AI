@@ -231,12 +231,13 @@ class JerseyRecognizer:
     def _enhance_torso_bgr(
         crop_bgr: np.ndarray,
         torso_box: Tuple[float, float, float, float] = DEFAULT_TORSO_CROP_BOX,
+        extra_scale: float = 1.0,
     ) -> Optional[np.ndarray]:
-        """Crop torso region and upscale/contrast-enhance small broadcast crops for digit OCR."""
+        """Crop torso region, reject ultra-tiny (<14px) crops, and upscale/contrast-enhance for digit OCR."""
         if crop_bgr is None or crop_bgr.size == 0:
             return None
         h, w = crop_bgr.shape[:2]
-        if w < 10 or h < 12:
+        if w < 14 or h < 14:
             return None
         fx1, fy1, fx2, fy2 = torso_box
         x1 = max(0, min(w - 1, int(round(w * fx1))))
@@ -248,9 +249,12 @@ class JerseyRecognizer:
             return None
 
         rh, rw = roi.shape[:2]
+        if rw < 8 or rh < 8:
+            return None
         min_side = min(rh, rw)
-        if min_side < 64:
-            scale = max(2.0, min(4.0, 72.0 / float(max(min_side, 1))))
+        if min_side < 64 or extra_scale > 1.0:
+            base_scale = max(2.0, min(4.0, 72.0 / float(max(min_side, 1)))) if min_side < 64 else 1.0
+            scale = base_scale * max(1.0, float(extra_scale))
             roi = cv2.resize(
                 roi,
                 (max(1, int(round(rw * scale))), max(1, int(round(rh * scale)))),
@@ -267,6 +271,13 @@ class JerseyRecognizer:
         except Exception:
             pass
         return roi
+
+    def _is_accepted_digit_read(self, num: Optional[int], conf: float) -> bool:
+        """Require stronger OCR confidence for single digits (1..9) to reject tiny noise artifacts."""
+        if num is None or not (1 <= int(num) <= 99):
+            return False
+        req = max(0.55, self.parseq_min_crop_conf) if int(num) < 10 else self.parseq_min_crop_conf
+        return float(conf) >= req
 
     def score_legibility(self, crops_bgr: List[np.ndarray]) -> np.ndarray:
         """Returns float32 array of probabilities strictly in [0.0, 1.0]."""
@@ -356,30 +367,38 @@ class JerseyRecognizer:
                 if num is None:
                     continue
                 c_val = float(conf_t[:-1].prod().item()) if len(conf_t) > 1 else float(conf_t.mean().item())
-                if c_val >= self.parseq_min_crop_conf:
+                if self._is_accepted_digit_read(num, c_val):
                     votes[num] += c_val * valid_chosen_scores[i_loc]
         else:
-            # Stage 4b Offline Fallback: RapidOCR ONNX on contrast-enhanced torso crops
+            # Stage 4b Offline Fallback: Multi-scale RapidOCR ONNX on contrast-enhanced torso crops
             for idx in chosen:
-                torso_bgr = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box)
+                torso_bgr = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box, extra_scale=1.0)
                 if torso_bgr is None:
                     continue
                 valid_count += 1
                 res_list, _ = self._rapidocr(torso_bgr)
                 if not res_list:
-                    res_list, _ = self._rapidocr(torso_bgr, use_det=False, use_cls=False, use_rec=True)
+                    torso_hi = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box, extra_scale=1.5)
+                    res_list, _ = self._rapidocr(
+                        torso_hi if torso_hi is not None else torso_bgr,
+                        use_det=False,
+                        use_cls=False,
+                        use_rec=True,
+                    )
                 if not res_list:
                     continue
                 for item in res_list:
                     if not isinstance(item, (list, tuple)) or len(item) < 2:
                         continue
-                    txt = str(item[-2])
+                    txt = str(item[-2]).strip()
+                    if any(ch.isalpha() for ch in txt) and not txt.startswith("#"):
+                        continue
                     try:
                         c_val = float(item[-1])
                     except (TypeError, ValueError):
                         continue
                     num = extract_jersey_digits(txt)
-                    if num is not None and c_val >= self.parseq_min_crop_conf:
+                    if self._is_accepted_digit_read(num, c_val):
                         votes[num] += c_val * float(scores[idx])
 
         if not votes or valid_count == 0:
