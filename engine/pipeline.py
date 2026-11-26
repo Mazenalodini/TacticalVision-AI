@@ -10,6 +10,7 @@ from .config import EngineConfig, FIFAPitchConfig
 from .detector import DualModelDetector
 from .tracker import PlayerByteTracker, KalmanBallTracker, interpolate_ball_track
 from .team_classifier import SigLIPTeamClassifier, stabilize_team_assignments
+from .jersey_recognizer import JerseyRecognizer
 from .homography import StabilizedHomography
 from .tactics import TacticalAnalyticsEngine
 from .renderer import BroadcastRenderer, transcode_to_h264
@@ -18,9 +19,9 @@ from .renderer import BroadcastRenderer, transcode_to_h264
 class MatchAnalysisPipeline:
     """
     End-to-End 2-Pass Football Tactical Analysis Engine:
-      Pass 1: Dual-Model Inference + ByteTrack + Kalman Ball + Stabilized Homography + Jersey Crops
-      Stage 2: SigLIP + UMAP + KMeans Team Fitting + Permanent ID Majority Voting
-      Stage 3: Ball Gap Interpolation + Full Physical & Tactical Telemetry Computation
+      Pass 1: Dual-YOLOv11 Detection + ByteTrack + Kalman Ball + Calibrated Homography + Person Crops
+      Stage 2: SigLIP + UMAP/PCA Team Fitting + Model 4 Jersey Legibility/PARSeq Voting
+      Stage 3: Ball Interpolation + Kinematics Smoothing + Tactical Telemetry Extraction
       Pass 2: Broadcast Video + 2D Tactical Radar Rendering + Web H.264 Encoding + JSON Export
     """
 
@@ -29,6 +30,27 @@ class MatchAnalysisPipeline:
         self.pitch = FIFAPitchConfig()
         self.detector = DualModelDetector(cfg)
         self.team_classifier = SigLIPTeamClassifier()
+        self.jersey_recognizer = JerseyRecognizer(
+            onnx_path=cfg.jersey_legibility_onnx_path or None,
+            pt_path=cfg.jersey_legibility_pt_path or None,
+            legibility_threshold=cfg.jersey_legibility_threshold,
+            min_track_ocr_conf=cfg.jersey_min_track_ocr_conf,
+            parseq_min_crop_conf=cfg.jersey_parseq_min_crop_conf,
+            max_crops_per_track=cfg.jersey_max_crops_per_track,
+            torso_crop_box=cfg.jersey_torso_crop_box,
+            enable_ocr=cfg.enable_jersey_ocr,
+        )
+
+    @staticmethod
+    def _crop_full_person(frame_bgr: np.ndarray, box: np.ndarray) -> Optional[np.ndarray]:
+        h_img, w_img = frame_bgr.shape[:2]
+        x1, y1, x2, y2 = box.astype(int)
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w_img, x2), min(h_img, y2)
+        if (x2 - x1) < 10 or (y2 - y1) < 16:
+            return None
+        crop = frame_bgr[y1:y2, x1:x2]
+        return crop.copy() if crop.size > 0 else None
 
     def run(
         self,
@@ -60,15 +82,19 @@ class MatchAnalysisPipeline:
             kpt_conf_thresh=self.cfg.pitch_kpt_conf,
             ema_alpha=self.cfg.homography_ema_alpha,
             max_reproj_m=self.cfg.max_homography_reproj_m,
+            min_span_m=self.cfg.min_span_m,
+            min_convex_hull_area_m2=self.cfg.min_convex_hull_area_m2,
         )
 
         # ======================================================================
-        # PASS 1: Detection, Tracking, Homography & Jersey Sampling
+        # PASS 1: Detection, Tracking, Homography & Person Sampling
         # ======================================================================
         frame_records = []
         raw_ball_xy = []
         jersey_samples = []
-        sample_stride = max(1, int(fps // 2))  # Sample jerseys twice per second
+        sample_stride = max(1, int(fps // 2))       # Sample team jersey colors ~2 Hz
+        full_crop_stride = max(1, int(fps // 4))    # Sample full person crops ~4 Hz for Model 4
+        pitch_stride = max(1, int(self.cfg.pitch_stride))
 
         pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)")
         for f_idx in pbar:
@@ -76,14 +102,16 @@ class MatchAnalysisPipeline:
             if not ok:
                 break
 
-            det = self.detector.infer_frame(frame)
+            run_pitch = (homography.H is None) or (f_idx % pitch_stride == 0)
+            det = self.detector.infer_frame(frame, run_pitch=run_pitch)
             boxes, confs, clss, tids = player_tracker.update(
                 det["person_boxes"], det["person_confs"], det["person_clss"]
             )
             ball_xy, ball_det_ok = ball_tracker.update(det["ball_boxes"], det["ball_confs"])
             raw_ball_xy.append(ball_xy)
 
-            homography.update(det["pitch_kpts_xy"], det["pitch_kpts_conf"])
+            if run_pitch:
+                homography.update(det["pitch_kpts_xy"], det["pitch_kpts_conf"])
 
             # Project player foot-points (bottom center of bounding box) onto FIFA pitch (meters)
             entities = []
@@ -95,18 +123,28 @@ class MatchAnalysisPipeline:
 
             for i in range(len(boxes)):
                 crop = None
-                if int(clss[i]) == self.cfg.player_id:
+                full_crop = None
+                c_cls = int(clss[i])
+                if c_cls == self.cfg.player_id:
                     crop = self.team_classifier.crop_jersey(frame, boxes[i])
                     if crop is not None and (f_idx % sample_stride == 0):
                         jersey_samples.append(crop)
 
+                if (
+                    self.cfg.enable_jersey_ocr
+                    and c_cls in (self.cfg.player_id, self.cfg.goalkeeper_id)
+                    and (f_idx % full_crop_stride == 0)
+                ):
+                    full_crop = self._crop_full_person(frame, boxes[i])
+
                 entities.append({
                     "track_id": int(tids[i]),
-                    "cls": int(clss[i]),
+                    "cls": c_cls,
                     "conf": float(confs[i]),
                     "box": boxes[i],
                     "pitch_xy": feet_m[i].copy() if feet_m is not None else None,
                     "crop": crop,
+                    "full_crop": full_crop,
                 })
 
             frame_records.append({
@@ -119,7 +157,7 @@ class MatchAnalysisPipeline:
 
         cap.release()
 
-        # Backfill any early frames before the first valid Homography so radar is 100% populated
+        # Backfill any early frames before the first valid Homography so radar is populated
         first_valid = next((r for r in frame_records if r["H"] is not None), None)
         if first_valid is not None:
             H0, H0_inv = first_valid["H"], first_valid["H_inv"]
@@ -135,9 +173,9 @@ class MatchAnalysisPipeline:
                         ent["pitch_xy"] = m
 
         # ======================================================================
-        # STAGE 2: Ball Interpolation & Stabilized Team Classification
+        # STAGE 2: Ball Interpolation, Team Classification & Model 4 Jersey OCR
         # ======================================================================
-        print("[Stage 2] Fitting SigLIP Team Classifier & Stabilizing Track IDs...")
+        print("[Stage 2] Fitting SigLIP Team Classifier & Running Model 4 Jersey Recognition...")
         self.team_classifier.fit(jersey_samples)
         stabilize_team_assignments(
             frame_records,
@@ -145,6 +183,28 @@ class MatchAnalysisPipeline:
             player_id=self.cfg.player_id,
             goalkeeper_id=self.cfg.goalkeeper_id,
         )
+
+        if self.cfg.enable_jersey_ocr:
+            jersey_assignments, jersey_diag = self.jersey_recognizer.recognize_tracks(
+                frame_records,
+                player_id=self.cfg.player_id,
+                goalkeeper_id=self.cfg.goalkeeper_id,
+            )
+        else:
+            # Clear temporary crops if OCR is explicitly disabled
+            for rec in frame_records:
+                for ent in rec["entities"]:
+                    ent.pop("full_crop", None)
+            jersey_assignments = {}
+            jersey_diag = {
+                "gate_enabled": False,
+                "gate_backend": "disabled",
+                "ocr_available": False,
+                "ocr_status": "disabled_by_user",
+                "tracks_evaluated": 0,
+                "legible_crops": 0,
+                "verified_players": 0,
+            }
 
         smooth_ball_xy = interpolate_ball_track(raw_ball_xy, max_gap=12)
         ball_tracked_frames = 0
@@ -167,7 +227,7 @@ class MatchAnalysisPipeline:
         # ======================================================================
         print("[Stage 3] Computing Speeds, Sprints, Passes, Voronoi Control, Convex Hull & xT...")
         tactics_engine = TacticalAnalyticsEngine(self.cfg, self.pitch, fps=fps)
-        telemetry = tactics_engine.analyze(frame_records)
+        telemetry = tactics_engine.analyze(frame_records, jersey_assignments=jersey_assignments)
 
         telemetry["match_info"] = {
             "source_video": vpath.name,
@@ -180,6 +240,7 @@ class MatchAnalysisPipeline:
             "homography": homography.summary(),
             "ball_coverage_pct": round(100.0 * ball_tracked_frames / max(1, len(frame_records)), 2),
             "processing_time_s": 0.0,
+            "jersey_recognition": jersey_diag,
         }
 
         # ======================================================================
@@ -219,9 +280,8 @@ class MatchAnalysisPipeline:
         transcode_to_h264(raw_broadcast, final_broadcast)
         transcode_to_h264(raw_radar, final_radar)
 
-        # Save preview composite PNG for quick inspection
         if preview_frames:
-            mid_idx, bf, rf = preview_frames[len(preview_frames) // 2]
+            _, bf, rf = preview_frames[len(preview_frames) // 2]
             rf_scaled = cv2.resize(rf, (int(rf.shape[1] * (bf.shape[0] / rf.shape[0])), bf.shape[0]))
             side_by_side = np.hstack([bf, rf_scaled])
             cv2.imwrite(str(out_dir / "preview_snapshot.png"), side_by_side)

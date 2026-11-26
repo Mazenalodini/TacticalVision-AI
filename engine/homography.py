@@ -1,23 +1,30 @@
 from typing import Optional
 import cv2
 import numpy as np
+from scipy.spatial import ConvexHull, QhullError
 
 from .config import FIFAPitchConfig
 
 
 class StabilizedHomography:
+    """RANSAC planar homography with geometric spread/convex-hull gates and EMA smoothing."""
+
     def __init__(
         self,
         pitch_cfg: FIFAPitchConfig,
-        kpt_conf_thresh: float = 0.45,
-        ema_alpha: float = 0.30,
-        max_reproj_m: float = 5.0,
+        kpt_conf_thresh: float = 0.30,
+        ema_alpha: float = 0.20,
+        max_reproj_m: float = 2.5,
+        min_span_m: float = 15.0,
+        min_convex_hull_area_m2: float = 150.0,
     ):
         self.pitch_cfg = pitch_cfg
         self.pitch_vertices = pitch_cfg.vertices
         self.kpt_conf_thresh = kpt_conf_thresh
         self.ema_alpha = ema_alpha
         self.max_reproj_m = max_reproj_m
+        self.min_span_m = min_span_m
+        self.min_convex_hull_area_m2 = min_convex_hull_area_m2
 
         self.H: Optional[np.ndarray] = None
         self.H_inv: Optional[np.ndarray] = None
@@ -28,9 +35,9 @@ class StabilizedHomography:
     def update(self, kpts_xy: np.ndarray, kpts_conf: np.ndarray) -> bool:
         valid_xy = (kpts_xy[:, 0] > 2.0) & (kpts_xy[:, 1] > 2.0)
         mask = valid_xy & (kpts_conf >= self.kpt_conf_thresh)
-        # Adaptive fallback on tight midfield camera zoom
+        # Adaptive relaxation when visible landmarks are sparse in tight midfield zooms
         if int(mask.sum()) < 5:
-            mask = valid_xy & (kpts_conf >= 0.30)
+            mask = valid_xy & (kpts_conf >= min(0.25, self.kpt_conf_thresh))
         if int(mask.sum()) < 4:
             self.rejected_updates += 1
             return self.H is not None
@@ -38,7 +45,22 @@ class StabilizedHomography:
         src_pts = kpts_xy[mask].astype(np.float32)
         dst_pts = self.pitch_vertices[mask].astype(np.float32)
 
+        # Reject tight pixel clusters that blow up projective scale
         if np.std(src_pts[:, 0]) < 12.0 or np.std(src_pts[:, 1]) < 10.0:
+            self.rejected_updates += 1
+            return self.H is not None
+
+        # Geometric Pitch Span & Convex-Hull Area Gate (prevents collinear corner blowups)
+        span_diag_m = float(np.hypot(np.ptp(dst_pts[:, 0]), np.ptp(dst_pts[:, 1])))
+        if span_diag_m < self.min_span_m:
+            self.rejected_updates += 1
+            return self.H is not None
+
+        try:
+            hull_area_m2 = float(ConvexHull(dst_pts).volume)  # volume = area in 2D
+        except QhullError:
+            hull_area_m2 = 0.0
+        if hull_area_m2 < self.min_convex_hull_area_m2:
             self.rejected_updates += 1
             return self.H is not None
 
@@ -54,9 +76,19 @@ class StabilizedHomography:
         H_cand = H_cand / H_cand[2, 2]
 
         inl_mask = inliers.ravel().astype(bool)
+        if int(inl_mask.sum()) < 4:
+            self.rejected_updates += 1
+            return self.H is not None
+
+        # Also check geometric span across RANSAC inliers specifically
+        inl_dst = dst_pts[inl_mask]
+        if float(np.hypot(np.ptp(inl_dst[:, 0]), np.ptp(inl_dst[:, 1]))) < self.min_span_m:
+            self.rejected_updates += 1
+            return self.H is not None
+
         proj = cv2.perspectiveTransform(src_pts[inl_mask].reshape(-1, 1, 2), H_cand).reshape(-1, 2)
-        err_m = float(np.mean(np.linalg.norm(proj - dst_pts[inl_mask], axis=1)))
-        gate_m = self.max_reproj_m if self.H is not None else max(7.0, self.max_reproj_m)
+        err_m = float(np.mean(np.linalg.norm(proj - inl_dst, axis=1)))
+        gate_m = self.max_reproj_m if self.H is not None else max(5.5, self.max_reproj_m * 2.0)
         if err_m > gate_m:
             self.rejected_updates += 1
             return self.H is not None

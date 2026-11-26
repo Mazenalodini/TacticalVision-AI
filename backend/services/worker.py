@@ -196,6 +196,19 @@ def main() -> int:
     parser.add_argument("--title", default="User Uploaded Match", help="Match display title")
     parser.add_argument("--max-seconds", type=float, default=5.0, help="Maximum clip duration to analyze")
     parser.add_argument("--mode", default="cpu_quick", help="Analysis mode (cpu_quick | remote_gpu)")
+    parser.add_argument(
+        "--enable-jersey-ocr",
+        dest="enable_jersey_ocr",
+        action="store_true",
+        default=True,
+        help="Run Model 4 Jersey Legibility Gate + PARSeq OCR",
+    )
+    parser.add_argument(
+        "--no-jersey-ocr",
+        dest="enable_jersey_ocr",
+        action="store_false",
+        help="Disable Model 4 Jersey Recognition",
+    )
 
     args = parser.parse_args()
 
@@ -254,7 +267,9 @@ def main() -> int:
         models_dir = project_root / "models"
         players_model = str(models_dir / "players_best.pt")
         pitch_model = str(models_dir / "pitch_best.pt")
-        thresholds_path = str(project_root / "reports" / "optimal_thresholds.json")
+        v1_thresh = project_root / "artifacts" / "models_meta" / "optimal_thresholds_v1.json"
+        legacy_thresh = project_root / "reports" / "optimal_thresholds.json"
+        thresholds_path = str(v1_thresh if v1_thresh.exists() else legacy_thresh)
 
         if not Path(players_model).exists():
             raise FileNotFoundError(f"Players model not found: {players_model}")
@@ -268,7 +283,7 @@ def main() -> int:
         pitch_imgsz = 512 if use_cpu_fast else 640
         orig_stdout.write(
             f"[Worker] Mode={args.mode} | CUDA={torch.cuda.is_available()} | "
-            f"det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz}\n"
+            f"det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz} | jersey_ocr={args.enable_jersey_ocr}\n"
         )
         orig_stdout.flush()
 
@@ -278,6 +293,7 @@ def main() -> int:
             thresholds_path=thresholds_path if Path(thresholds_path).exists() else "",
             det_imgsz=det_imgsz,
             pitch_imgsz=pitch_imgsz,
+            enable_jersey_ocr=bool(args.enable_jersey_ocr),
         )
 
         pipeline = MatchAnalysisPipeline(cfg)

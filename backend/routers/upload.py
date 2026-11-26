@@ -30,6 +30,7 @@ async def analyze_match(
     mode: str = Form("cpu_quick"),
     max_seconds: float = Form(3.0),
     remote_gpu_url: Optional[str] = Form(None),
+    enable_jersey_ocr: bool = Form(True),
 ):
     """Upload and schedule a video for tactical AI analysis."""
     # 1. Validate file extension
@@ -59,6 +60,7 @@ async def analyze_match(
                     "title": title,
                     "mode": "remote_gpu",
                     "max_seconds": str(max_seconds),
+                    "enable_jersey_ocr": str(enable_jersey_ocr).lower(),
                 }
                 res = await client.post(f"{target_url.rstrip('/')}/api/matches/analyze", files=files, data=data)
                 if res.status_code not in (200, 202):
@@ -103,6 +105,7 @@ async def analyze_match(
         title=title,
         mode=mode,
         max_seconds=max_seconds,
+        enable_jersey_ocr=enable_jersey_ocr,
     )
 
     return {"job_id": job_id, "status": "queued"}

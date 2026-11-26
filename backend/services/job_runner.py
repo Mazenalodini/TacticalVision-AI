@@ -33,6 +33,7 @@ class JobRunner:
         title: str,
         mode: str = "cpu_quick",
         max_seconds: float = 3.0,
+        enable_jersey_ocr: bool = True,
     ) -> str:
         """Create and spawn an isolated worker subprocess."""
         job_id = f"job_{uuid.uuid4().hex[:12]}"
@@ -61,6 +62,7 @@ class JobRunner:
             str(clamped_seconds),
             "--mode",
             mode,
+            "--enable-jersey-ocr" if enable_jersey_ocr else "--no-jersey-ocr",
         ]
 
         # Stream stdout/stderr to a log file (avoids Windows 4KB subprocess.PIPE deadlock)

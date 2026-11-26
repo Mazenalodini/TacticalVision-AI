@@ -7,7 +7,7 @@ All 8 top-level keys of telemetry.json are covered:
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,10 @@ class PlayerStat(BaseModel):
     xt_generated: float
     avg_pitch_xy: list[float]        # [x, y] meters
     frames_visible: int
+    jersey_number: Optional[int] = None
+    jersey_confidence: Optional[float] = None
+    jersey_verified: bool = False
+    legibility_score: Optional[float] = None
 
 
 # ── passing_network ─────────────────────────────────────────────────
@@ -130,6 +134,8 @@ class FramePlayer(BaseModel):
     x: float
     y: float
     spd: float
+    jn: Optional[int] = None
+    jv: Optional[bool] = None
 
 
 class TimelineFrame(BaseModel):
@@ -164,6 +170,7 @@ class EngineDiagnostics(BaseModel):
     homography: HomographySummary
     ball_coverage_pct: float
     processing_time_s: float
+    jersey_recognition: Optional[dict[str, Any]] = None
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -218,3 +225,66 @@ class JobStatus(BaseModel):
     error: Optional[str] = None
     match_id: Optional[str] = None
     pid: Optional[int] = None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 4-Model AI Suite & Action Spotting Schemas
+# ══════════════════════════════════════════════════════════════════════
+
+class ActionSpottingEvent(BaseModel):
+    class_id: int
+    label: str
+    category: str
+    half: int
+    frame_idx: int
+    time_s: float
+    minute_str: str
+    confidence: float
+
+
+class ActionSpottingDensityBin(BaseModel):
+    bin_index: int
+    label: str
+    start_s: float
+    end_s: float
+    count: int
+    high_impact_count: int
+
+
+class ActionSpottingHalfSummary(BaseModel):
+    half: int
+    num_frames: int
+    fps: float
+    duration_s: float
+    inference_ms: float
+    backend_used: str
+    events_count: int
+
+
+class ActionSpottingGTComparison(BaseModel):
+    tolerance_sec: float = 10.0
+    gt_total: int
+    matched_gt: int
+    predicted_total: int
+    precision_pct: float
+    recall_pct: float
+
+
+class ActionSpottingAnalyzeResponse(BaseModel):
+    run_id: str
+    match_id: str
+    match_title: str
+    half_mode: str
+    fps: float
+    min_conf: float
+    nms_window_sec: float
+    total_inference_ms: float
+    backend_used: str
+    halves: list[ActionSpottingHalfSummary]
+    events: list[ActionSpottingEvent]
+    class_counts: dict[str, int]
+    category_counts: dict[str, int]
+    density_bins: list[ActionSpottingDensityBin]
+    ground_truth_events: Optional[list[dict[str, Any]]] = None
+    gt_comparison: Optional[ActionSpottingGTComparison] = None
+    created_at: str

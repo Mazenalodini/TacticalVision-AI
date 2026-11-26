@@ -42,8 +42,8 @@ class DualModelDetector:
         }
         self.min_conf = min(self.cls_thresholds.values())
 
-    def infer_frame(self, frame_bgr: np.ndarray) -> Dict[str, Any]:
-        # 1. Match Object Detection @ 1280px
+    def infer_frame(self, frame_bgr: np.ndarray, run_pitch: bool = True) -> Dict[str, Any]:
+        # 1. Match Object Detection @ 1280px (or 640px in cpu_quick)
         det_res = self.players_model.predict(
             frame_bgr,
             imgsz=self.cfg.det_imgsz,
@@ -72,25 +72,25 @@ class DualModelDetector:
         ball_mask = clss == self.cfg.ball_id
         person_mask = ~ball_mask
 
-        # 2. Pitch 32-Keypoints Detection @ 640px
-        pitch_res = self.pitch_model.predict(
-            frame_bgr,
-            imgsz=self.cfg.pitch_imgsz,
-            conf=0.15,
-            max_det=1,
-            device=self.device,
-            verbose=False,
-        )[0]
+        # 2. Pitch 32-Keypoints Detection @ 640px (skipped when stride > 1 and homography locked)
+        kpts_xy = np.zeros((32, 2), dtype=np.float32)
+        kpts_conf = np.zeros((32,), dtype=np.float32)
+        if run_pitch:
+            pitch_res = self.pitch_model.predict(
+                frame_bgr,
+                imgsz=self.cfg.pitch_imgsz,
+                conf=0.15,
+                max_det=1,
+                device=self.device,
+                verbose=False,
+            )[0]
 
-        if pitch_res.keypoints is not None and len(pitch_res.keypoints.xy) > 0:
-            kpts_xy = pitch_res.keypoints.xy[0].cpu().numpy().astype(np.float32)
-            if pitch_res.keypoints.conf is not None:
-                kpts_conf = pitch_res.keypoints.conf[0].cpu().numpy().astype(np.float32)
-            else:
-                kpts_conf = ((kpts_xy[:, 0] > 0) & (kpts_xy[:, 1] > 0)).astype(np.float32)
-        else:
-            kpts_xy = np.zeros((32, 2), dtype=np.float32)
-            kpts_conf = np.zeros((32,), dtype=np.float32)
+            if pitch_res.keypoints is not None and len(pitch_res.keypoints.xy) > 0:
+                kpts_xy = pitch_res.keypoints.xy[0].cpu().numpy().astype(np.float32)
+                if pitch_res.keypoints.conf is not None:
+                    kpts_conf = pitch_res.keypoints.conf[0].cpu().numpy().astype(np.float32)
+                else:
+                    kpts_conf = ((kpts_xy[:, 0] > 0) & (kpts_xy[:, 1] > 0)).astype(np.float32)
 
         return {
             "person_boxes": boxes[person_mask],

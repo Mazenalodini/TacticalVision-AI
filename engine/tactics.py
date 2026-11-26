@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
+from scipy.ndimage import median_filter
 from scipy.spatial import ConvexHull
 
 from .config import EngineConfig, FIFAPitchConfig, XT_GRID
@@ -91,12 +92,17 @@ class TacticalAnalyticsEngine:
             "team_0_att_third_pct": round(t0_att, 1),
         }
 
-    def analyze(self, frame_records: List[dict]) -> Dict[str, Any]:
+    def analyze(
+        self,
+        frame_records: List[dict],
+        jersey_assignments: Optional[Dict[int, dict]] = None,
+    ) -> Dict[str, Any]:
         # 1. Collect per-player pitch trajectories for smooth kinematics
         track_frames: Dict[int, List[int]] = defaultdict(list)
         track_coords: Dict[int, List[np.ndarray]] = defaultdict(list)
         track_team: Dict[int, int] = {}
         track_role: Dict[int, str] = {}
+        jersey_map = jersey_assignments or {}
 
         role_names = {
             self.cfg.player_id: "player",
@@ -115,39 +121,61 @@ class TacticalAnalyticsEngine:
                     track_team[tid] = int(ent["team"])
                 track_role[tid] = role_names.get(int(ent["cls"]), "player")
 
-        # 2. Compute Smoothed Speeds, Distances & High-Intensity Sprints
+        # 2. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & Sprints
+        pos_win = max(1, int(self.cfg.position_moving_avg_window))
+        vel_win = max(1, int(self.cfg.speed_window_frames))
+        med_k = max(1, int(self.cfg.speed_median_filter))
+        max_spd_cap = float(self.cfg.max_valid_speed_kmh)
+
         player_stats: Dict[int, dict] = {}
         speed_lookup: Dict[Tuple[int, int], float] = {}
         sprint_events = []
 
         for tid, f_list in track_frames.items():
             pts = np.array(track_coords[tid], dtype=np.float32)
-            smooth_pts = self._smooth_series(pts, window=5)
-            total_dist = 0.0
-            max_speed = 0.0
-            speeds = [0.0]
+            smooth_pts = self._smooth_series(pts, window=pos_win)
+            n_obs = len(f_list)
+            raw_speeds = np.zeros(n_obs, dtype=np.float32)
+            step_dists = np.zeros(n_obs, dtype=np.float32)
+
+            for k in range(1, n_obs):
+                dt_step = (f_list[k] - f_list[k - 1]) / self.fps
+                if dt_step <= 0 or dt_step > 0.6:
+                    continue
+                d_step = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k - 1]))
+                inst_spd = (d_step / dt_step) * 3.6
+                if inst_spd > max_spd_cap:
+                    d_step = (max_spd_cap / 3.6) * dt_step
+                step_dists[k] = d_step
+
+                # Multi-frame windowed speed suppresses single-frame projection noise
+                k_lo = max(0, k - vel_win)
+                # Ensure continuity across k_lo..k
+                while k_lo < k - 1 and (f_list[k] - f_list[k_lo]) > max(vel_win * 2, int(self.fps * 0.8)):
+                    k_lo += 1
+                dt_win = (f_list[k] - f_list[k_lo]) / self.fps
+                if dt_win > 0:
+                    d_win = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k_lo]))
+                    raw_speeds[k] = min(max_spd_cap, (d_win / dt_win) * 3.6)
+
+            if n_obs >= med_k and med_k > 1:
+                speeds = np.clip(median_filter(raw_speeds, size=med_k, mode="nearest"), 0.0, max_spd_cap)
+            else:
+                speeds = np.clip(raw_speeds, 0.0, max_spd_cap)
+
+            total_dist = float(np.sum(step_dists))
+            max_speed = float(np.max(speeds)) if n_obs > 0 else 0.0
             sprint_streak = 0
             sprint_count = 0
             in_sprint = False
 
-            for k in range(1, len(f_list)):
-                dt = (f_list[k] - f_list[k - 1]) / self.fps
-                if dt <= 0 or dt > 0.6:
-                    speeds.append(0.0)
+            for k in range(1, n_obs):
+                dt_step = (f_list[k] - f_list[k - 1]) / self.fps
+                if dt_step <= 0 or dt_step > 0.6:
                     sprint_streak = 0
                     in_sprint = False
                     continue
-                d_m = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k - 1]))
-                spd_kmh = (d_m / dt) * 3.6
-                # Physical sanity cap to suppress occasional homography/ID switches
-                if spd_kmh > self.cfg.max_player_speed_kmh:
-                    spd_kmh = speeds[-1]
-                    d_m = (spd_kmh / 3.6) * dt
-                total_dist += d_m
-                if spd_kmh > max_speed:
-                    max_speed = spd_kmh
-                speeds.append(spd_kmh)
-
+                spd_kmh = float(speeds[k])
                 if spd_kmh >= self.cfg.sprint_threshold_kmh:
                     sprint_streak += 1
                     if not in_sprint and sprint_streak >= max(3, int(self.fps * 0.4)):
@@ -165,10 +193,11 @@ class TacticalAnalyticsEngine:
                     sprint_streak = 0
                     in_sprint = False
 
-            for f_i, sp, pt in zip(f_list, speeds, smooth_pts):
+            for f_i, sp in zip(f_list, speeds):
                 speed_lookup[(f_i, tid)] = round(float(sp), 1)
 
             if track_role.get(tid) in ("player", "goalkeeper") and tid in track_team:
+                jinfo = jersey_map.get(tid, {})
                 player_stats[tid] = {
                     "track_id": tid,
                     "team": track_team[tid],
@@ -181,6 +210,10 @@ class TacticalAnalyticsEngine:
                     "xt_generated": 0.0,
                     "avg_pitch_xy": [round(float(np.mean(smooth_pts[:, 0])), 2), round(float(np.mean(smooth_pts[:, 1])), 2)],
                     "frames_visible": len(f_list),
+                    "jersey_number": jinfo.get("jersey_number"),
+                    "jersey_confidence": jinfo.get("jersey_confidence"),
+                    "jersey_verified": bool(jinfo.get("jersey_verified", False)),
+                    "legibility_score": jinfo.get("legibility_score"),
                 }
 
         # 3. Frame-by-Frame Possession, Passes, Interceptions, Hull, Defensive Line & Voronoi
@@ -226,14 +259,19 @@ class TacticalAnalyticsEngine:
                     hy = int(np.clip(pt[1] / self.pitch.width, 0.0, 0.999) * 8)
                     heatmaps[tm][hy, hx] += 1
 
-                    frame_players_json.append({
+                    jinfo = jersey_map.get(tid, {})
+                    fp_entry = {
                         "id": tid,
                         "team": tm,
                         "role": "gk" if ent["cls"] == self.cfg.goalkeeper_id else "p",
                         "x": round(float(pt[0]), 2),
                         "y": round(float(pt[1]), 2),
                         "spd": ent["speed_kmh"],
-                    })
+                    }
+                    if jinfo.get("jersey_number") is not None:
+                        fp_entry["jn"] = jinfo["jersey_number"]
+                        fp_entry["jv"] = bool(jinfo.get("jersey_verified", False))
+                    frame_players_json.append(fp_entry)
 
             # Convex Hull & Defensive Line (Last outfield defender X per team)
             frame_hulls = {}
