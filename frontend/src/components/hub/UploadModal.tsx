@@ -17,6 +17,7 @@ import {
   FileVideo,
   Ban,
   StopCircle,
+  BadgeCheck,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
@@ -40,6 +41,7 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
   const [title, setTitle] = useState<string>("");
   const [mode, setMode] = useState<"cpu_quick" | "remote_gpu">("cpu_quick");
   const [duration, setDuration] = useState<number>(3.0);
+  const [enableJerseyOcr, setEnableJerseyOcr] = useState<boolean>(true);
   const [remoteGpuUrl, setRemoteGpuUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
@@ -194,6 +196,7 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
     formData.append("title", title || file.name);
     formData.append("mode", mode);
     formData.append("max_seconds", duration.toString());
+    formData.append("enable_jersey_ocr", String(enableJerseyOcr));
     if (mode === "remote_gpu") {
       formData.append("remote_gpu_url", remoteGpuUrl.trim());
     }
@@ -653,6 +656,57 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
                     />
                   </div>
                 )}
+
+                {/* Model 4: Auto Jersey Number Recognition Toggle */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enableJerseyOcr}
+                  onClick={() => setEnableJerseyOcr((prev) => !prev)}
+                  className={`w-full p-3.5 rounded-xl border text-start transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                    enableJerseyOcr
+                      ? "bg-tv-mint/[0.07] border-tv-mint/35"
+                      : "obsidian-well border-white/[0.08] hover:border-white/15"
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                        enableJerseyOcr
+                          ? "bg-tv-mint/15 text-tv-mint border border-tv-mint/30"
+                          : "bg-white/[0.05] text-slate-400 border border-white/10"
+                      }`}
+                    >
+                      <BadgeCheck className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white">
+                        {t("upload.jersey_ocr_title")}
+                      </p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed mt-0.5">
+                        {t("upload.jersey_ocr_desc")}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {t("upload.jersey_ocr_cpu_note")}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors mt-1 ${
+                      enableJerseyOcr
+                        ? "bg-tv-mint border-tv-mint"
+                        : "bg-slate-800 border-white/15"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-slate-950 shadow transform transition-transform mt-[1px] ${
+                        enableJerseyOcr
+                          ? "translate-x-4 rtl:-translate-x-4"
+                          : "translate-x-0.5 rtl:-translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
 
                 {/* Error Banner */}
                 {submitError && (

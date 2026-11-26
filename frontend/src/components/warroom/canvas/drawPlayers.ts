@@ -237,12 +237,34 @@ export function drawPlayers(
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // Razor-sharp Player ID Label
+    // Verified Model 4 Jersey Ring + Mint Lock Indicator
+    const hasVerifiedJersey = Boolean(player.jv && player.jn != null);
+    if (hasVerifiedJersey) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + 1.4, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(52, 211, 153, 0.75)";
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
+
+      // Tiny verified Mint badge pip at top-right shoulder
+      const bx = cx + radius * 0.76;
+      const by = cy - radius * 0.76;
+      ctx.beginPath();
+      ctx.arc(bx, by, 2.7, 0, Math.PI * 2);
+      ctx.fillStyle = "#34D399";
+      ctx.fill();
+      ctx.strokeStyle = "#060B10";
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+    }
+
+    // Razor-sharp Player ID or Verified Jersey Label
+    const displayLabel = hasVerifiedJersey ? `${player.jn}` : `${player.id}`;
     ctx.fillStyle = isTeam0 ? "#04101A" : "#FFFFFF";
     ctx.font = "bold 8.8px var(--font-jetbrains), monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${player.id}`, cx, cy + 0.5);
+    ctx.fillText(displayLabel, cx, cy + 0.5);
 
     ctx.restore();
   }

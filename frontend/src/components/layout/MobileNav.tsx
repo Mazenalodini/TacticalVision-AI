@@ -10,6 +10,8 @@ import {
   BarChart3,
   PlusCircle,
   Home,
+  Activity,
+  Cpu,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLang } from "@/context/LangContext";
@@ -21,8 +23,10 @@ export function MobileNav() {
     "pitch" | "events" | "stats"
   >("pitch");
 
-  const isHub = pathname === "/";
   const isWarRoom = pathname.startsWith("/match/");
+  const isSpotting = pathname.startsWith("/action-spotting");
+  const isModels = pathname.startsWith("/models");
+  const isHub = pathname === "/";
 
   const handleOpenUpload = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -61,33 +65,77 @@ export function MobileNav() {
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050912]/95 backdrop-blur-xl border-t border-white/[0.08] px-2 py-1.5 safe-bottom print:hidden">
-      {isHub ? (
-        <div className="flex justify-around items-center">
+      {!isWarRoom ? (
+        <div className="grid grid-cols-4 items-center">
           <Link
             href="/"
-            className="relative flex flex-col items-center py-1 px-6 text-tv-cyan"
+            className={`relative flex flex-col items-center py-1 transition-colors ${
+              isHub ? "text-tv-cyan font-bold" : "text-slate-400 hover:text-white"
+            }`}
           >
-            <motion.span
-              layoutId="mobile-bottom-pill"
-              transition={{ type: "spring", stiffness: 480, damping: 32 }}
-              className="absolute -top-1.5 w-10 h-0.5 rounded-full bg-tv-cyan"
-            />
-            <LayoutGrid className="w-5 h-5" />
-            <span className="text-xs mt-0.5 font-bold">{t("mobile.matches")}</span>
+            {isHub && (
+              <motion.span
+                layoutId="mobile-bottom-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                className="absolute -top-1.5 w-8 h-0.5 rounded-full bg-tv-cyan"
+              />
+            )}
+            <LayoutGrid className="w-4 h-4" />
+            <span className="text-[11px] mt-0.5 truncate max-w-full px-1">
+              {t("mobile.matches")}
+            </span>
+          </Link>
+
+          <Link
+            href="/action-spotting"
+            className={`relative flex flex-col items-center py-1 transition-colors ${
+              isSpotting ? "text-tv-mint font-bold" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {isSpotting && (
+              <motion.span
+                layoutId="mobile-bottom-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                className="absolute -top-1.5 w-8 h-0.5 rounded-full bg-tv-mint"
+              />
+            )}
+            <Activity className="w-4 h-4" />
+            <span className="text-[11px] mt-0.5 truncate max-w-full px-1">
+              {t("mobile.spotting")}
+            </span>
+          </Link>
+
+          <Link
+            href="/models"
+            className={`relative flex flex-col items-center py-1 transition-colors ${
+              isModels ? "text-tv-amber font-bold" : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {isModels && (
+              <motion.span
+                layoutId="mobile-bottom-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 32 }}
+                className="absolute -top-1.5 w-8 h-0.5 rounded-full bg-tv-amber"
+              />
+            )}
+            <Cpu className="w-4 h-4" />
+            <span className="text-[11px] mt-0.5 truncate max-w-full px-1">
+              {t("mobile.models")}
+            </span>
           </Link>
 
           <button
             type="button"
             onClick={handleOpenUpload}
-            className="relative flex flex-col items-center py-1 px-6 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            className="relative flex flex-col items-center py-1 text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
-            <PlusCircle className="w-5 h-5 text-tv-mint" />
-            <span className="text-xs mt-0.5 font-semibold">
+            <PlusCircle className="w-4 h-4 text-tv-cyan" />
+            <span className="text-[11px] mt-0.5 font-semibold truncate max-w-full px-1">
               {t("mobile.analyze")}
             </span>
           </button>
         </div>
-      ) : isWarRoom ? (
+      ) : (
         <div className="grid grid-cols-4 items-center">
           <Link
             href="/"
@@ -159,7 +207,7 @@ export function MobileNav() {
             <span className="text-[11px] mt-0.5">{t("mobile.stats")}</span>
           </button>
         </div>
-      ) : null}
+      )}
     </nav>
   );
 }

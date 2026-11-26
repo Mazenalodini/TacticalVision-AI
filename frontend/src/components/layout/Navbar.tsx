@@ -10,6 +10,8 @@ import {
   Compass,
   LayoutGrid,
   Play,
+  Activity,
+  Cpu,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { fetchMatches, API_BASE } from "@/lib/api";
@@ -172,6 +174,8 @@ export function Navbar() {
   }, [loadNavData]);
 
   const isHub = pathname === "/";
+  const isSpotting = pathname.startsWith("/action-spotting");
+  const isModels = pathname.startsWith("/models");
   const activeMatchId = pathname.startsWith("/match/")
     ? decodeURIComponent(pathname.replace("/match/", "").split("/")[0])
     : null;
@@ -337,11 +341,47 @@ export function Navbar() {
               </AnimatePresence>
             </div>
 
-            {/* 3. How It Works Workflow Drawer */}
+            {/* 3. Action Spotting Studio (Model 3) */}
+            <Link
+              href="/action-spotting"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                isSpotting ? "text-white" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              {isSpotting && (
+                <motion.span
+                  layoutId="navbar-workspace-pill"
+                  transition={{ type: "spring", stiffness: 450, damping: 34 }}
+                  className="absolute inset-0 rounded-lg bg-white/[0.09] border border-white/15 shadow-sm"
+                />
+              )}
+              <Activity className="w-3.5 h-3.5 relative z-10 text-tv-mint" />
+              <span className="relative z-10">{t("nav.action_spotting")}</span>
+            </Link>
+
+            {/* 4. AI Models & Benchmarks Lab */}
+            <Link
+              href="/models"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                isModels ? "text-white" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              {isModels && (
+                <motion.span
+                  layoutId="navbar-workspace-pill"
+                  transition={{ type: "spring", stiffness: 450, damping: 34 }}
+                  className="absolute inset-0 rounded-lg bg-white/[0.09] border border-white/15 shadow-sm"
+                />
+              )}
+              <Cpu className="w-3.5 h-3.5 relative z-10 text-tv-amber" />
+              <span className="relative z-10">{t("nav.models_lab")}</span>
+            </Link>
+
+            {/* 5. How It Works Workflow Drawer */}
             <button
               type="button"
               onClick={() => setHowItWorksOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
             >
               <Compass className="w-3.5 h-3.5 text-tv-mint" />
               <span>{t("nav.how_it_works")}</span>

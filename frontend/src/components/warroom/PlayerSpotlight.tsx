@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play } from "lucide-react";
+import { X, Play, BadgeCheck, ScanEye } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry, PlayerStat } from "@/lib/types";
 import { formatRole, formatTeamName } from "@/lib/format";
@@ -140,29 +140,55 @@ export function PlayerSpotlight({
               <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-white/[0.08]">
                 <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center font-mono font-extrabold text-sm shadow-lg shrink-0 ${
+                    className={`relative w-11 h-11 rounded-xl flex items-center justify-center font-mono font-extrabold text-sm shadow-lg shrink-0 ${
                       isTeam0
                         ? "bg-tv-cyan text-slate-950 shadow-tv-cyan/25"
                         : "bg-tv-coral text-white shadow-tv-coral/25"
-                    }`}
+                    } ${activeStat.jersey_verified && activeStat.jersey_number != null ? "ring-2 ring-tv-mint/80 ring-offset-2 ring-offset-[#070B14]" : ""}`}
                   >
-                    <BidiNum>#{activeStat.track_id}</BidiNum>
+                    <BidiNum>
+                      {activeStat.jersey_verified && activeStat.jersey_number != null
+                        ? `#${activeStat.jersey_number}`
+                        : `#${activeStat.track_id}`}
+                    </BidiNum>
+                    {activeStat.jersey_verified && activeStat.jersey_number != null && (
+                      <span className="absolute -top-1.5 -end-1.5 w-4 h-4 rounded-full bg-tv-mint text-slate-950 flex items-center justify-center shadow">
+                        <BadgeCheck className="w-3 h-3 stroke-[2.6]" />
+                      </span>
+                    )}
                   </div>
 
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm sm:text-base font-bold text-white">
                         {formatRole(activeStat.role, lang)}{" "}
-                        <BidiNum>#{activeStat.track_id}</BidiNum>
+                        <BidiNum>
+                          {activeStat.jersey_verified && activeStat.jersey_number != null
+                            ? `#${activeStat.jersey_number}`
+                            : `#${activeStat.track_id}`}
+                        </BidiNum>
                       </h3>
                       <span
                         className={`px-2 py-0.5 rounded-md text-[11px] font-bold border ${teamBadgeClass}`}
                       >
                         {formatTeamName(activeStat.team, lang)}
                       </span>
+                      {activeStat.jersey_verified && activeStat.jersey_number != null ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-tv-mint/15 border border-tv-mint/35 text-tv-mint">
+                          <BadgeCheck className="w-3 h-3 shrink-0" />
+                          <span>{t("jersey.verified")}</span>
+                        </span>
+                      ) : (
+                        activeStat.legibility_score != null && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold obsidian-well text-slate-300">
+                            <ScanEye className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>{t("jersey.track_fallback")}</span>
+                          </span>
+                        )
+                      )}
                     </div>
 
-                    {/* Live Frame Velocity */}
+                    {/* Live Frame Velocity + Optional Model 4 OCR Telemetry */}
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                       <span className="text-xs text-slate-400">
                         {t("spot.live_speed")}:
@@ -180,6 +206,24 @@ export function PlayerSpotlight({
                       {isCurrentlySprinting && (
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-tv-mint/15 text-tv-mint">
                           {t("spot.sprinting_now")}
+                        </span>
+                      )}
+                      {activeStat.jersey_verified && activeStat.jersey_number != null && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                          <span>{t("jersey.track_fallback")}</span>
+                          <BidiNum className="text-slate-300">#{activeStat.track_id}</BidiNum>
+                        </span>
+                      )}
+                      {activeStat.jersey_confidence != null && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] obsidian-well text-tv-mint">
+                          <span>{t("jersey.ocr_conf")}</span>
+                          <BidiNum>{`${Math.round(activeStat.jersey_confidence * 100)}%`}</BidiNum>
+                        </span>
+                      )}
+                      {activeStat.legibility_score != null && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] obsidian-well text-slate-300">
+                          <span>{t("jersey.legibility")}</span>
+                          <BidiNum>{`${Math.round(activeStat.legibility_score * 100)}%`}</BidiNum>
                         </span>
                       )}
                     </div>

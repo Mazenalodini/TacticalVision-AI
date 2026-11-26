@@ -149,6 +149,8 @@ export function stabilizeTelemetry(
     spd: number;
     team: 0 | 1;
     role: "p" | "gk";
+    jn?: number | null;
+    jv?: boolean | null;
   }
 
   const rawTracks = new Map<number, RawObs[]>();
@@ -170,6 +172,8 @@ export function stabilizeTelemetry(
         spd: Number.isFinite(p.spd) ? Math.max(0, Math.min(42, p.spd)) : 0,
         team: p.team === 1 ? 1 : 0,
         role: p.role === "gk" ? "gk" : "p",
+        jn: p.jn ?? null,
+        jv: p.jv ?? null,
       });
     }
   }
@@ -244,6 +248,8 @@ export function stabilizeTelemetry(
               spd: prev.spd + (cur.spd - prev.spd) * ratio,
               team: cur.team,
               role: cur.role,
+              jn: cur.jn ?? prev.jn ?? null,
+              jv: cur.jv ?? prev.jv ?? null,
             });
           }
         }
@@ -325,6 +331,8 @@ export function stabilizeTelemetry(
         spd: item.spd,
         team: item.team,
         role: item.role,
+        jn: item.jn ?? null,
+        jv: item.jv ?? null,
         vx,
         vy,
       });
@@ -594,6 +602,8 @@ export function interpolateStabilizedFrame(
         spd: pa.spd + (pb.spd - pa.spd) * alpha,
         team: pb.team,
         role: pb.role,
+        jn: pb.jn ?? pa.jn ?? null,
+        jv: pb.jv ?? pa.jv ?? null,
         vx: pa.vx,
         vy: pa.vy,
       });

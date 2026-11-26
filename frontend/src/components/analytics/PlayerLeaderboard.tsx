@@ -10,6 +10,7 @@ import {
   FileJson,
   Printer,
   Crosshair,
+  BadgeCheck,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { BidiNum } from "@/components/ui/BidiNum";
@@ -72,6 +73,7 @@ export function PlayerLeaderboard({
       list = list.filter(
         (p) =>
           p.track_id.toString().includes(q) ||
+          (p.jersey_number != null && p.jersey_number.toString().includes(q)) ||
           p.role.toLowerCase().includes(q)
       );
     }
@@ -459,15 +461,38 @@ export function PlayerLeaderboard({
                     key={`player-row-${p.track_id}`}
                     className="hover:bg-white/[0.03] transition-colors group print:hover:bg-transparent"
                   >
-                    {/* ID */}
+                    {/* ID (Model 4 Verified Jersey #jn when available, else #track_id) */}
                     <td className="py-2.5 px-3 font-bold text-white print:text-black text-start">
-                      <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className="inline-flex items-center gap-1.5"
+                        title={
+                          p.jersey_verified && p.jersey_number != null
+                            ? `${t("jersey.verified")} · ${t("jersey.track_fallback")} #${p.track_id}${
+                                p.jersey_confidence != null
+                                  ? ` · ${Math.round(p.jersey_confidence * 100)}%`
+                                  : ""
+                              }`
+                            : `#${p.track_id}`
+                        }
+                      >
                         <span
                           className={`w-2 h-2 rounded-full shrink-0 ${
                             isCyan ? "bg-tv-cyan" : "bg-tv-coral"
                           }`}
                         />
-                        <BidiNum>{`#${p.track_id}`}</BidiNum>
+                        {p.jersey_verified && p.jersey_number != null ? (
+                          <span className="inline-flex items-center gap-1">
+                            <BidiNum className="text-white font-extrabold">
+                              {`#${p.jersey_number}`}
+                            </BidiNum>
+                            <BadgeCheck className="w-3.5 h-3.5 text-tv-mint shrink-0" />
+                            <BidiNum className="text-[10px] text-slate-500 font-normal">
+                              {`T${p.track_id}`}
+                            </BidiNum>
+                          </span>
+                        ) : (
+                          <BidiNum>{`#${p.track_id}`}</BidiNum>
+                        )}
                       </span>
                     </td>
 
