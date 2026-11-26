@@ -1,0 +1,89 @@
+{
+  "models": {
+    "players_detector": {
+      "pt": "players_best.pt",
+      "onnx": "players_best.onnx",
+      "status": "ACTIVE"
+    },
+    "pitch_keypoints": {
+      "pt": "pitch_best.pt",
+      "onnx": "pitch_best.onnx",
+      "status": "ACTIVE"
+    },
+    "action_spotting": {
+      "pt": "action_spotting_v1.pt",
+      "onnx": "action_spotting_v1.onnx",
+      "onnx_cpu_int8": "action_spotting_v1_int8.onnx",
+      "classes": [
+        "Penalty",
+        "Kick-off",
+        "Goal",
+        "Substitution",
+        "Offside",
+        "Shots on target",
+        "Shots off target",
+        "Clearance",
+        "Ball out of play",
+        "Throw-in",
+        "Foul",
+        "Indirect free-kick",
+        "Direct free-kick",
+        "Corner",
+        "Yellow card",
+        "Red card",
+        "Yellow->red card"
+      ],
+      "status": "ACTIVE"
+    },
+    "jersey_legibility": {
+      "pt": "jersey_legibility_v1.pt",
+      "onnx": "jersey_legibility_v1.onnx",
+      "onnx_cpu_int8": "jersey_legibility_v1_int8.onnx",
+      "optimal_threshold": 0.25,
+      "ocr_engine": "PARSeq (pretrained)",
+      "status": "ACTIVE"
+    }
+  },
+  "production_tuning": {
+    "model_1_players": {
+      "det_conf": 0.35,
+      "tracker": "bytetrack.yaml",
+      "imgsz": 1280
+    },
+    "model_2_pitch_homography": {
+      "kpt_conf": 0.3,
+      "pitch_stride": 2,
+      "min_span_m": 15.0,
+      "min_convex_hull_area_m2": 150.0,
+      "max_reproj_error_m": 2.5,
+      "ema_alpha": 0.2
+    },
+    "model_3_action_spotting": {
+      "preferred_file": "action_spotting_v1_int8.onnx",
+      "fps": 2,
+      "window_frames": 80,
+      "stride_frames": 40,
+      "nms_window_sec": 10.0,
+      "min_conf": 0.35
+    },
+    "model_4_jersey_recognition": {
+      "preferred_legibility_file": "jersey_legibility_v1_int8.onnx",
+      "legibility_threshold": 0.45,
+      "min_track_ocr_conf": 0.18,
+      "max_crops_per_track": 12,
+      "torso_crop_box": [
+        0.2,
+        0.18,
+        0.8,
+        0.56
+      ],
+      "parseq_min_crop_conf": 0.35
+    },
+    "kinematics_smoothing": {
+      "position_moving_avg_window": 7,
+      "speed_window_frames": 10,
+      "speed_median_filter": 5,
+      "max_valid_speed_kmh": 35.5
+    }
+  }
+}

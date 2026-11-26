@@ -1,0 +1,1227 @@
+{
+  "game_id": "test_000",
+  "game_rel": "england_epl/2014-2015/2015-05-17 - 18-00 Manchester United 1 - 1 Arsenal",
+  "split": "test",
+  "npz_rel": "test/test_000.npz",
+  "num_frames": {
+    "1": 5400,
+    "2": 6087
+  },
+  "events": {
+    "1": [
+      {
+        "frame_idx": 0,
+        "time_s": 0.0,
+        "class_id": 1,
+        "label": "Kick-off",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 153,
+        "time_s": 76.376,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 172,
+        "time_s": 86.245,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 457,
+        "time_s": 228.671,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 470,
+        "time_s": 234.838,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 502,
+        "time_s": 251.234,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 514,
+        "time_s": 257.105,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 678,
+        "time_s": 338.821,
+        "class_id": 6,
+        "label": "Shots off target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 757,
+        "time_s": 378.587,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 970,
+        "time_s": 484.93,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 996,
+        "time_s": 497.799,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1053,
+        "time_s": 526.319,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1122,
+        "time_s": 560.953,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1129,
+        "time_s": 564.431,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1130,
+        "time_s": 565.146,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1173,
+        "time_s": 586.402,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1300,
+        "time_s": 649.853,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1582,
+        "time_s": 791.119,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1716,
+        "time_s": 857.854,
+        "class_id": 12,
+        "label": "Direct free-kick",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1785,
+        "time_s": 892.558,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1818,
+        "time_s": 909.203,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1861,
+        "time_s": 930.657,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1868,
+        "time_s": 933.904,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1877,
+        "time_s": 938.45,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1889,
+        "time_s": 944.573,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1957,
+        "time_s": 978.619,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1975,
+        "time_s": 987.33,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2046,
+        "time_s": 1022.818,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2353,
+        "time_s": 1176.408,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2373,
+        "time_s": 1186.34,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 2385,
+        "time_s": 1192.309,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2397,
+        "time_s": 1198.643,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 2551,
+        "time_s": 1275.549,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2615,
+        "time_s": 1307.677,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 2721,
+        "time_s": 1360.694,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2756,
+        "time_s": 1377.917,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 2852,
+        "time_s": 1425.82,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2860,
+        "time_s": 1430.031,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2884,
+        "time_s": 1441.82,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2895,
+        "time_s": 1447.647,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 3078,
+        "time_s": 1538.783,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3179,
+        "time_s": 1589.444,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3211,
+        "time_s": 1605.667,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3416,
+        "time_s": 1708.008,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3474,
+        "time_s": 1737.168,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3502,
+        "time_s": 1751.064,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 3519,
+        "time_s": 1759.283,
+        "class_id": 2,
+        "label": "Goal",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3612,
+        "time_s": 1805.888,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4119,
+        "time_s": 2059.345,
+        "class_id": 6,
+        "label": "Shots off target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4178,
+        "time_s": 2089.108,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4192,
+        "time_s": 2095.969,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4223,
+        "time_s": 2111.623,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4248,
+        "time_s": 2123.961,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4451,
+        "time_s": 2225.658,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4498,
+        "time_s": 2248.762,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4715,
+        "time_s": 2357.271,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4787,
+        "time_s": 2393.587,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4851,
+        "time_s": 2425.679,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4938,
+        "time_s": 2468.855,
+        "class_id": 11,
+        "label": "Indirect free-kick",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4974,
+        "time_s": 2487.11,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5007,
+        "time_s": 2503.363,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 5208,
+        "time_s": 2604.084,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5226,
+        "time_s": 2613.205,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5289,
+        "time_s": 2644.459,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5375,
+        "time_s": 2687.399,
+        "class_id": 11,
+        "label": "Indirect free-kick",
+        "visibility": "visible"
+      }
+    ],
+    "2": [
+      {
+        "frame_idx": 0,
+        "time_s": 0.006,
+        "class_id": 1,
+        "label": "Kick-off",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 37,
+        "time_s": 18.636,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 50,
+        "time_s": 24.803,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 100,
+        "time_s": 49.864,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 349,
+        "time_s": 174.481,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 377,
+        "time_s": 188.412,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 396,
+        "time_s": 198.133,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 568,
+        "time_s": 284.08,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 599,
+        "time_s": 299.542,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 606,
+        "time_s": 303.077,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 627,
+        "time_s": 313.56,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 636,
+        "time_s": 318.015,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 674,
+        "time_s": 337.076,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 701,
+        "time_s": 350.677,
+        "class_id": 6,
+        "label": "Shots off target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 763,
+        "time_s": 381.745,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 815,
+        "time_s": 407.474,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 829,
+        "time_s": 414.745,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 926,
+        "time_s": 463.086,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 951,
+        "time_s": 475.714,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1023,
+        "time_s": 511.475,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1064,
+        "time_s": 532.053,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1126,
+        "time_s": 563.119,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1141,
+        "time_s": 570.516,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1159,
+        "time_s": 579.732,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1202,
+        "time_s": 600.901,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1241,
+        "time_s": 620.611,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1279,
+        "time_s": 639.588,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1323,
+        "time_s": 661.587,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1337,
+        "time_s": 668.37,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1344,
+        "time_s": 672.032,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1356,
+        "time_s": 677.977,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1402,
+        "time_s": 701.221,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1499,
+        "time_s": 749.715,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1827,
+        "time_s": 913.676,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1862,
+        "time_s": 931.126,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1886,
+        "time_s": 943.228,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1904,
+        "time_s": 951.882,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1920,
+        "time_s": 960.14,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1925,
+        "time_s": 962.474,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 1959,
+        "time_s": 979.453,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2058,
+        "time_s": 1029.127,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2096,
+        "time_s": 1048.033,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2150,
+        "time_s": 1074.779,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2176,
+        "time_s": 1088.074,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2209,
+        "time_s": 1104.567,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2271,
+        "time_s": 1135.315,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2326,
+        "time_s": 1162.896,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2355,
+        "time_s": 1177.536,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2383,
+        "time_s": 1191.396,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2448,
+        "time_s": 1224.161,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2535,
+        "time_s": 1267.483,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2575,
+        "time_s": 1287.731,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2627,
+        "time_s": 1313.643,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2684,
+        "time_s": 1342.056,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2714,
+        "time_s": 1357.245,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2863,
+        "time_s": 1431.566,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2881,
+        "time_s": 1440.748,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 2932,
+        "time_s": 1466.223,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 2967,
+        "time_s": 1483.648,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3039,
+        "time_s": 1519.606,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3094,
+        "time_s": 1546.925,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3222,
+        "time_s": 1611.238,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3265,
+        "time_s": 1632.46,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3351,
+        "time_s": 1675.578,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3483,
+        "time_s": 1741.657,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 3532,
+        "time_s": 1765.769,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3580,
+        "time_s": 1789.892,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3662,
+        "time_s": 1831.004,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3729,
+        "time_s": 1864.252,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3805,
+        "time_s": 1902.48,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 3821,
+        "time_s": 1910.362,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4017,
+        "time_s": 2008.606,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4031,
+        "time_s": 2015.328,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4110,
+        "time_s": 2054.966,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4153,
+        "time_s": 2076.477,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4224,
+        "time_s": 2111.875,
+        "class_id": 13,
+        "label": "Corner",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4277,
+        "time_s": 2138.541,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4312,
+        "time_s": 2155.988,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4345,
+        "time_s": 2172.726,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4389,
+        "time_s": 2194.468,
+        "class_id": 2,
+        "label": "Goal",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4476,
+        "time_s": 2237.812,
+        "class_id": 1,
+        "label": "Kick-off",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4565,
+        "time_s": 2282.485,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4635,
+        "time_s": 2317.255,
+        "class_id": 6,
+        "label": "Shots off target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4666,
+        "time_s": 2332.86,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4704,
+        "time_s": 2352.161,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4739,
+        "time_s": 2369.67,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "not shown"
+      },
+      {
+        "frame_idx": 4768,
+        "time_s": 2383.975,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4814,
+        "time_s": 2407.033,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4854,
+        "time_s": 2427.131,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4889,
+        "time_s": 2444.625,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 4962,
+        "time_s": 2480.899,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5038,
+        "time_s": 2519.244,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5047,
+        "time_s": 2523.528,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5096,
+        "time_s": 2548.131,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5163,
+        "time_s": 2581.555,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5200,
+        "time_s": 2599.885,
+        "class_id": 5,
+        "label": "Shots on target",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5295,
+        "time_s": 2647.496,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5388,
+        "time_s": 2693.773,
+        "class_id": 3,
+        "label": "Substitution",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5469,
+        "time_s": 2734.603,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5539,
+        "time_s": 2769.739,
+        "class_id": 11,
+        "label": "Indirect free-kick",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5632,
+        "time_s": 2815.929,
+        "class_id": 4,
+        "label": "Offside",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5755,
+        "time_s": 2877.261,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5772,
+        "time_s": 2885.865,
+        "class_id": 9,
+        "label": "Throw-in",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5870,
+        "time_s": 2935.227,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5909,
+        "time_s": 2954.422,
+        "class_id": 7,
+        "label": "Clearance",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5980,
+        "time_s": 2989.994,
+        "class_id": 10,
+        "label": "Foul",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 5991,
+        "time_s": 2995.317,
+        "class_id": 14,
+        "label": "Yellow card",
+        "visibility": "visible"
+      },
+      {
+        "frame_idx": 6020,
+        "time_s": 3010.041,
+        "class_id": 8,
+        "label": "Ball out of play",
+        "visibility": "visible"
+      }
+    ]
+  }
+}

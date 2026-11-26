@@ -1,0 +1,227 @@
+{
+  "project": "TacticalVision AI — 4-Model Unified Production Suite",
+  "generated_at": "2026-11-24T04:16:31.210895+00:00",
+  "model_1_players_detector": {
+    "model": "yolo11m.pt",
+    "imgsz": 1280,
+    "overall_mAP50": 0.8976,
+    "overall_mAP50_95": 0.6824,
+    "per_class_map": {
+      "ball": {
+        "mAP50": 0.6333,
+        "mAP50_95": 0.3527
+      },
+      "goalkeeper": {
+        "mAP50": 0.9782,
+        "mAP50_95": 0.8224
+      },
+      "player": {
+        "mAP50": 0.9943,
+        "mAP50_95": 0.8348
+      },
+      "referee": {
+        "mAP50": 0.9846,
+        "mAP50_95": 0.7197
+      }
+    },
+    "per_class_calibrated_iou50": {
+      "ball": {
+        "class_id": 0,
+        "tp": 21,
+        "fp": 1,
+        "fn": 14,
+        "precision": 0.9545,
+        "recall": 0.6,
+        "f1": 0.7368
+      },
+      "goalkeeper": {
+        "class_id": 1,
+        "tp": 26,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.963,
+        "recall": 0.963,
+        "f1": 0.963
+      },
+      "player": {
+        "class_id": 2,
+        "tp": 745,
+        "fp": 5,
+        "fn": 9,
+        "precision": 0.9933,
+        "recall": 0.9881,
+        "f1": 0.9907
+      },
+      "referee": {
+        "class_id": 3,
+        "tp": 88,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.9888,
+        "recall": 0.9888,
+        "f1": 0.9888
+      }
+    },
+    "ball_missed_val_frames": 14
+  },
+  "model_1_coco_baseline": {
+    "model": "yolo11m.pt (COCO Pretrained Zero-Shot)",
+    "imgsz": 640,
+    "per_class_iou50": {
+      "ball": {
+        "class_id": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 35,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "goalkeeper": {
+        "class_id": 1,
+        "tp": 0,
+        "fp": 0,
+        "fn": 27,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "player": {
+        "class_id": 2,
+        "tp": 565,
+        "fp": 134,
+        "fn": 189,
+        "precision": 0.8083,
+        "recall": 0.7493,
+        "f1": 0.7777
+      },
+      "referee": {
+        "class_id": 3,
+        "tp": 0,
+        "fp": 0,
+        "fn": 89,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    }
+  },
+  "model_2_pitch_keypoints": {
+    "pose_mAP50": 0.9255,
+    "pose_mAP50_95": 0.3771,
+    "mean_pixel_error_px": 13.86,
+    "median_pixel_error_px": 10.35,
+    "pck_5px_pct": 17.74,
+    "pck_10px_pct": 47.74,
+    "pck_20px_pct": 86.77,
+    "homography_ready_frames_pct": 97.06,
+    "mean_ransac_reproj_error_px": 32.81
+  },
+  "model_3_action_spotting": {
+    "architecture": "Multi-Scale Dilated TCN (d=1,2,4,8) + 2L Bi-GRU + 4H Temporal Self-Attention",
+    "params_millions": 2.94,
+    "best_epoch": 45,
+    "test_metrics": {
+      "tight_amap_pct": 47.95,
+      "loose_amap_pct": 62.63,
+      "map_at_1s_pct": 29.76,
+      "map_at_5s_pct": 56.14,
+      "per_class_tight_ap_pct": {
+        "Penalty": 79.72,
+        "Kick-off": 33.0,
+        "Goal": 80.07,
+        "Substitution": 36.64,
+        "Offside": 32.68,
+        "Shots on target": 39.79,
+        "Shots off target": 45.49,
+        "Clearance": 48.86,
+        "Ball out of play": 65.09,
+        "Throw-in": 50.11,
+        "Foul": 53.3,
+        "Indirect free-kick": 30.05,
+        "Direct free-kick": 65.74,
+        "Corner": 78.92,
+        "Yellow card": 52.23,
+        "Red card": 4.71,
+        "Yellow->red card": 1.73
+      }
+    }
+  },
+  "model_4_jersey_recognition": {
+    "backbone": "mobilenetv3_large_100",
+    "optimal_threshold": 0.25,
+    "legibility_test_metrics": {
+      "threshold": 0.25,
+      "crop_level": {
+        "roc_auc_pct": 84.27,
+        "pr_auc_pct": 88.53,
+        "f1_pct": 90.47,
+        "precision_pct": 85.04,
+        "recall_pct": 96.64
+      },
+      "tracklet_level": {
+        "roc_auc_pct": 83.62,
+        "f1_pct": 85.97,
+        "precision_pct": 75.67,
+        "recall_pct": 99.53,
+        "confusion_matrix": [
+          [
+            81,
+            273
+          ],
+          [
+            4,
+            849
+          ]
+        ]
+      }
+    },
+    "parseq_ablation": {
+      "raw_parseq_no_gate": {
+        "overall_acc_pct": 42.67,
+        "legible_acc_pct": 38.83,
+        "illegible_rejection_pct": 51.06
+      },
+      "full_gated_pipeline": {
+        "overall_acc_pct": 49.33,
+        "legible_acc_pct": 41.75,
+        "illegible_rejection_pct": 65.96
+      }
+    }
+  },
+  "cpu_onnx_benchmarks": {
+    "model_1_players_detector_onnx": {
+      "size_mb": 80.94,
+      "cpu_latency_ms": 4421.21,
+      "cpu_fps": 0.2
+    },
+    "model_2_pitch_keypoints_onnx": {
+      "size_mb": 86.07,
+      "cpu_latency_ms": 1213.43,
+      "cpu_fps": 0.8
+    },
+    "model_3_action_spotting_onnx": {
+      "size_mb": 11.78,
+      "cpu_latency_ms": 22.74,
+      "cpu_fps": 44.0,
+      "pytorch_onnx_max_abs_diff": 0.0,
+      "int8_cpu_benchmark": {
+        "size_mb": 9.56,
+        "cpu_latency_ms": 21.14,
+        "cpu_fps": 47.3
+      }
+    },
+    "model_4_jersey_legibility_onnx": {
+      "size_mb": 16.81,
+      "cpu_latency_ms": 14.2,
+      "cpu_fps": 70.4,
+      "pytorch_onnx_max_abs_diff": 0.0,
+      "optimal_threshold": 0.25,
+      "int8_cpu_benchmark": {
+        "size_mb": 16.82,
+        "cpu_latency_ms": 11.16,
+        "cpu_fps": 89.6
+      }
+    }
+  }
+}

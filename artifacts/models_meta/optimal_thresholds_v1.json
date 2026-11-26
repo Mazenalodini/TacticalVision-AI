@@ -1,0 +1,10 @@
+{
+  "class_thresholds": {
+    "ball": 0.35,
+    "goalkeeper": 0.5,
+    "player": 0.6,
+    "referee": 0.45
+  },
+  "pitch_keypoint_conf_threshold": 0.6,
+  "nms_iou": 0.5
+}

@@ -40,11 +40,17 @@ frontend/out/
 frontend/build/
 *.tsbuildinfo
 
-# --- ML Model Weights & Heavy Media Binaries ---
+# --- ML Model Weights, Feature Dumps & Heavy Media Binaries ---
 /models/
+/artifacts/demo_features/
+/artifacts/action_spotting_results/
+TacticalVision_Production_Models_Pack_Lite/
 *.pt
 *.pth
 *.onnx
+*.zip
+*.npy
+*.npz
 *.mp4
 *.mov
 *.mkv

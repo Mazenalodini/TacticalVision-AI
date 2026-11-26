@@ -1,0 +1,862 @@
+{
+  "match": "england_epl/2014-2015/2015-05-17 - 18-00 Manchester United 1 - 1 Arsenal",
+  "half": 1,
+  "cpu_inference_sec": 1.71,
+  "detected_events": [
+    {
+      "class": "Ball out of play",
+      "time_s": 77.0,
+      "confidence": 0.629
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 87.0,
+      "confidence": 0.464
+    },
+    {
+      "class": "Offside",
+      "time_s": 100.0,
+      "confidence": 0.403
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 101.5,
+      "confidence": 0.521
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 106.0,
+      "confidence": 0.417
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 112.0,
+      "confidence": 0.436
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 114.5,
+      "confidence": 0.377
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 226.5,
+      "confidence": 0.457
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 226.5,
+      "confidence": 0.43
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 229.0,
+      "confidence": 0.587
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 234.5,
+      "confidence": 0.478
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 251.0,
+      "confidence": 0.586
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 258.5,
+      "confidence": 0.519
+    },
+    {
+      "class": "Offside",
+      "time_s": 301.5,
+      "confidence": 0.518
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 304.0,
+      "confidence": 0.507
+    },
+    {
+      "class": "Clearance",
+      "time_s": 325.5,
+      "confidence": 0.437
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 325.5,
+      "confidence": 0.492
+    },
+    {
+      "class": "Offside",
+      "time_s": 338.0,
+      "confidence": 0.404
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 339.0,
+      "confidence": 0.437
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 339.0,
+      "confidence": 0.523
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 339.5,
+      "confidence": 0.635
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 354.5,
+      "confidence": 0.354
+    },
+    {
+      "class": "Clearance",
+      "time_s": 380.0,
+      "confidence": 0.803
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 380.0,
+      "confidence": 0.433
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 422.5,
+      "confidence": 0.468
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 425.5,
+      "confidence": 0.513
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 485.5,
+      "confidence": 0.711
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 498.0,
+      "confidence": 0.631
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 514.0,
+      "confidence": 0.433
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 524.5,
+      "confidence": 0.382
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 524.5,
+      "confidence": 0.436
+    },
+    {
+      "class": "Offside",
+      "time_s": 525.0,
+      "confidence": 0.465
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 526.0,
+      "confidence": 0.564
+    },
+    {
+      "class": "Corner",
+      "time_s": 560.5,
+      "confidence": 0.752
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 564.0,
+      "confidence": 0.398
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 564.0,
+      "confidence": 0.523
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 564.5,
+      "confidence": 0.633
+    },
+    {
+      "class": "Corner",
+      "time_s": 586.5,
+      "confidence": 0.706
+    },
+    {
+      "class": "Foul",
+      "time_s": 648.5,
+      "confidence": 0.566
+    },
+    {
+      "class": "Corner",
+      "time_s": 683.0,
+      "confidence": 0.397
+    },
+    {
+      "class": "Clearance",
+      "time_s": 686.5,
+      "confidence": 0.512
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 686.5,
+      "confidence": 0.397
+    },
+    {
+      "class": "Foul",
+      "time_s": 792.0,
+      "confidence": 0.59
+    },
+    {
+      "class": "Direct free-kick",
+      "time_s": 857.0,
+      "confidence": 0.819
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 857.5,
+      "confidence": 0.546
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 859.0,
+      "confidence": 0.501
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 859.0,
+      "confidence": 0.527
+    },
+    {
+      "class": "Clearance",
+      "time_s": 877.0,
+      "confidence": 0.601
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 877.0,
+      "confidence": 0.448
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 898.5,
+      "confidence": 0.378
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 907.0,
+      "confidence": 0.37
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 931.0,
+      "confidence": 0.574
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 934.5,
+      "confidence": 0.592
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 939.0,
+      "confidence": 0.468
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 945.5,
+      "confidence": 0.354
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 947.0,
+      "confidence": 0.69
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 980.0,
+      "confidence": 0.63
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 986.0,
+      "confidence": 0.501
+    },
+    {
+      "class": "Foul",
+      "time_s": 1024.0,
+      "confidence": 0.543
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1032.0,
+      "confidence": 0.424
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1033.0,
+      "confidence": 0.364
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1078.0,
+      "confidence": 0.352
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1177.5,
+      "confidence": 0.63
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1187.5,
+      "confidence": 0.503
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1194.0,
+      "confidence": 0.56
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1202.0,
+      "confidence": 0.538
+    },
+    {
+      "class": "Offside",
+      "time_s": 1227.5,
+      "confidence": 0.439
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1237.0,
+      "confidence": 0.35
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1238.0,
+      "confidence": 0.483
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1274.5,
+      "confidence": 0.438
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 1274.5,
+      "confidence": 0.561
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1275.5,
+      "confidence": 0.693
+    },
+    {
+      "class": "Clearance",
+      "time_s": 1310.0,
+      "confidence": 0.372
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1310.0,
+      "confidence": 0.491
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1360.5,
+      "confidence": 0.685
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1367.0,
+      "confidence": 0.396
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1374.0,
+      "confidence": 0.412
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1379.5,
+      "confidence": 0.619
+    },
+    {
+      "class": "Offside",
+      "time_s": 1402.5,
+      "confidence": 0.532
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1404.0,
+      "confidence": 0.445
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1416.0,
+      "confidence": 0.367
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1416.0,
+      "confidence": 0.394
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1441.0,
+      "confidence": 0.65
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1448.5,
+      "confidence": 0.628
+    },
+    {
+      "class": "Foul",
+      "time_s": 1537.5,
+      "confidence": 0.655
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 1547.5,
+      "confidence": 0.485
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 1553.0,
+      "confidence": 0.654
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1570.0,
+      "confidence": 0.472
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1587.5,
+      "confidence": 0.373
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1589.0,
+      "confidence": 0.654
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1595.5,
+      "confidence": 0.415
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1599.5,
+      "confidence": 0.455
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1605.0,
+      "confidence": 0.625
+    },
+    {
+      "class": "Foul",
+      "time_s": 1650.0,
+      "confidence": 0.465
+    },
+    {
+      "class": "Foul",
+      "time_s": 1708.5,
+      "confidence": 0.535
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 1713.5,
+      "confidence": 0.506
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 1721.5,
+      "confidence": 0.353
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1721.5,
+      "confidence": 0.444
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1736.0,
+      "confidence": 0.636
+    },
+    {
+      "class": "Clearance",
+      "time_s": 1750.5,
+      "confidence": 0.384
+    },
+    {
+      "class": "Goal",
+      "time_s": 1760.0,
+      "confidence": 0.69
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1760.0,
+      "confidence": 0.679
+    },
+    {
+      "class": "Kick-off",
+      "time_s": 1808.0,
+      "confidence": 0.404
+    },
+    {
+      "class": "Kick-off",
+      "time_s": 1813.5,
+      "confidence": 0.51
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 1831.0,
+      "confidence": 0.446
+    },
+    {
+      "class": "Clearance",
+      "time_s": 1831.5,
+      "confidence": 0.353
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1852.5,
+      "confidence": 0.36
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1908.5,
+      "confidence": 0.402
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 1928.5,
+      "confidence": 0.576
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 1928.5,
+      "confidence": 0.69
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 1929.5,
+      "confidence": 0.721
+    },
+    {
+      "class": "Clearance",
+      "time_s": 1948.5,
+      "confidence": 0.502
+    },
+    {
+      "class": "Clearance",
+      "time_s": 1959.5,
+      "confidence": 0.353
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 2060.0,
+      "confidence": 0.533
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 2060.0,
+      "confidence": 0.587
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2060.5,
+      "confidence": 0.643
+    },
+    {
+      "class": "Clearance",
+      "time_s": 2075.0,
+      "confidence": 0.383
+    },
+    {
+      "class": "Offside",
+      "time_s": 2081.0,
+      "confidence": 0.364
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 2081.0,
+      "confidence": 0.38
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2082.5,
+      "confidence": 0.544
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2095.5,
+      "confidence": 0.506
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2105.5,
+      "confidence": 0.361
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2112.5,
+      "confidence": 0.6
+    },
+    {
+      "class": "Foul",
+      "time_s": 2123.5,
+      "confidence": 0.7
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2126.0,
+      "confidence": 0.441
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2134.5,
+      "confidence": 0.676
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2140.5,
+      "confidence": 0.668
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2147.0,
+      "confidence": 0.608
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2159.0,
+      "confidence": 0.442
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2167.0,
+      "confidence": 0.359
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2174.0,
+      "confidence": 0.381
+    },
+    {
+      "class": "Foul",
+      "time_s": 2225.0,
+      "confidence": 0.596
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2227.0,
+      "confidence": 0.362
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2234.5,
+      "confidence": 0.439
+    },
+    {
+      "class": "Offside",
+      "time_s": 2248.5,
+      "confidence": 0.552
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2249.5,
+      "confidence": 0.491
+    },
+    {
+      "class": "Shots off target",
+      "time_s": 2287.0,
+      "confidence": 0.494
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 2287.5,
+      "confidence": 0.446
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2290.5,
+      "confidence": 0.681
+    },
+    {
+      "class": "Clearance",
+      "time_s": 2304.0,
+      "confidence": 0.443
+    },
+    {
+      "class": "Clearance",
+      "time_s": 2309.5,
+      "confidence": 0.394
+    },
+    {
+      "class": "Clearance",
+      "time_s": 2315.0,
+      "confidence": 0.457
+    },
+    {
+      "class": "Offside",
+      "time_s": 2358.5,
+      "confidence": 0.586
+    },
+    {
+      "class": "Foul",
+      "time_s": 2359.5,
+      "confidence": 0.39
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2361.0,
+      "confidence": 0.422
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2373.0,
+      "confidence": 0.518
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2379.0,
+      "confidence": 0.405
+    },
+    {
+      "class": "Offside",
+      "time_s": 2392.0,
+      "confidence": 0.383
+    },
+    {
+      "class": "Foul",
+      "time_s": 2392.0,
+      "confidence": 0.539
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2394.5,
+      "confidence": 0.606
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2401.0,
+      "confidence": 0.459
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2407.0,
+      "confidence": 0.403
+    },
+    {
+      "class": "Foul",
+      "time_s": 2424.5,
+      "confidence": 0.572
+    },
+    {
+      "class": "Yellow card",
+      "time_s": 2428.5,
+      "confidence": 0.59
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2449.0,
+      "confidence": 0.365
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2468.5,
+      "confidence": 0.416
+    },
+    {
+      "class": "Direct free-kick",
+      "time_s": 2469.0,
+      "confidence": 0.655
+    },
+    {
+      "class": "Offside",
+      "time_s": 2484.5,
+      "confidence": 0.364
+    },
+    {
+      "class": "Foul",
+      "time_s": 2486.5,
+      "confidence": 0.459
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2488.0,
+      "confidence": 0.623
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2509.5,
+      "confidence": 0.516
+    },
+    {
+      "class": "Shots on target",
+      "time_s": 2550.0,
+      "confidence": 0.406
+    },
+    {
+      "class": "Offside",
+      "time_s": 2604.0,
+      "confidence": 0.405
+    },
+    {
+      "class": "Foul",
+      "time_s": 2605.0,
+      "confidence": 0.486
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2606.0,
+      "confidence": 0.493
+    },
+    {
+      "class": "Throw-in",
+      "time_s": 2613.0,
+      "confidence": 0.467
+    },
+    {
+      "class": "Indirect free-kick",
+      "time_s": 2613.5,
+      "confidence": 0.449
+    },
+    {
+      "class": "Foul",
+      "time_s": 2643.5,
+      "confidence": 0.444
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2646.0,
+      "confidence": 0.485
+    },
+    {
+      "class": "Ball out of play",
+      "time_s": 2676.0,
+      "confidence": 0.392
+    },
+    {
+      "class": "Corner",
+      "time_s": 2687.5,
+      "confidence": 0.669
+    }
+  ]
+}
