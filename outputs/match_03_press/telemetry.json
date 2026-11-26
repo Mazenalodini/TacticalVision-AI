@@ -138699,6 +138699,9 @@
       "mean_inlier_reproj_error_m": 1.183
     },
     "ball_coverage_pct": 85.87,
-    "processing_time_s": 241.95
-  }
+    "processing_time_s": 241.95,
+    "broadcast_spotting_ms": 37085.69,
+    "broadcast_spotting_backend": "onnx_int8"
+  },
+  "broadcast_events": []
 }

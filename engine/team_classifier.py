@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional
 import cv2
@@ -9,7 +10,7 @@ from sklearn.decomposition import PCA
 
 
 class SigLIPTeamClassifier:
-    def __init__(self, model_name: str = "google/siglip-base-patch16-224"):
+    def __init__(self, model_name: str = "google/siglip-base-patch16-224", enable_siglip: bool = True):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.use_siglip = False
         self.processor = None
@@ -18,10 +19,24 @@ class SigLIPTeamClassifier:
         self.kmeans = KMeans(n_clusters=2, n_init=10, random_state=42)
         self.fitted = False
 
+        if not enable_siglip:
+            print("[TeamClassifier] cpu_quick mode active: using fast LAB non-green jersey clustering.")
+            return
+
+        offline = (
+            os.environ.get("HF_HUB_OFFLINE") == "1"
+            or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+        )
         try:
             from transformers import AutoProcessor, AutoModel
-            self.processor = AutoProcessor.from_pretrained(model_name)
-            self.model = AutoModel.from_pretrained(model_name).to(self.device)
+            self.processor = AutoProcessor.from_pretrained(
+                model_name,
+                local_files_only=offline,
+            )
+            self.model = AutoModel.from_pretrained(
+                model_name,
+                local_files_only=offline,
+            ).to(self.device)
             self.model.eval()
             self.use_siglip = True
             print(f"[TeamClassifier] Loaded SigLIP ({model_name}) on {self.device}.")

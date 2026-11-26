@@ -140832,6 +140832,160 @@
       "mean_inlier_reproj_error_m": 0.653
     },
     "ball_coverage_pct": 82.0,
-    "processing_time_s": 231.67
-  }
+    "processing_time_s": 231.67,
+    "broadcast_spotting_ms": 27857.4,
+    "broadcast_spotting_backend": "onnx_int8"
+  },
+  "broadcast_events": [
+    {
+      "class_id": 14,
+      "label": "Yellow card",
+      "category": "card",
+      "half": 1,
+      "frame_idx": 0,
+      "time_s": 0.0,
+      "minute_str": "00:00",
+      "confidence": 0.1519
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 7,
+      "time_s": 3.36,
+      "minute_str": "00:03",
+      "confidence": 0.1515
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 15,
+      "time_s": 7.2,
+      "minute_str": "00:07",
+      "confidence": 0.1876
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 19,
+      "time_s": 9.12,
+      "minute_str": "00:09",
+      "confidence": 0.1512
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 25,
+      "time_s": 12.0,
+      "minute_str": "00:12",
+      "confidence": 0.1796
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 25,
+      "time_s": 12.0,
+      "minute_str": "00:12",
+      "confidence": 0.1604
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 31,
+      "time_s": 14.88,
+      "minute_str": "00:14",
+      "confidence": 0.1671
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 39,
+      "time_s": 18.72,
+      "minute_str": "00:18",
+      "confidence": 0.1806
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 39,
+      "time_s": 18.72,
+      "minute_str": "00:18",
+      "confidence": 0.1535
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 46,
+      "time_s": 22.08,
+      "minute_str": "00:22",
+      "confidence": 0.2056
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 48,
+      "time_s": 23.04,
+      "minute_str": "00:23",
+      "confidence": 0.1725
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 52,
+      "time_s": 24.96,
+      "minute_str": "00:24",
+      "confidence": 0.1914
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 54,
+      "time_s": 25.92,
+      "minute_str": "00:25",
+      "confidence": 0.1623
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 58,
+      "time_s": 27.84,
+      "minute_str": "00:27",
+      "confidence": 0.195
+    },
+    {
+      "class_id": 11,
+      "label": "Indirect free-kick",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 62,
+      "time_s": 29.76,
+      "minute_str": "00:29",
+      "confidence": 0.1504
+    }
+  ]
 }

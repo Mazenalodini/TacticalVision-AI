@@ -14,13 +14,16 @@ from .jersey_recognizer import JerseyRecognizer
 from .homography import StabilizedHomography
 from .tactics import TacticalAnalyticsEngine
 from .renderer import BroadcastRenderer, transcode_to_h264
+from .video_feature_extractor import SoccerNetVideoFeatureExtractor
+from .action_spotter import ActionSpotter
 
 
 class MatchAnalysisPipeline:
     """
-    End-to-End 2-Pass Football Tactical Analysis Engine:
-      Pass 1: Dual-YOLOv11 Detection + ByteTrack + Kalman Ball + Calibrated Homography + Person Crops
-      Stage 2: SigLIP + UMAP/PCA Team Fitting + Model 4 Jersey Legibility/PARSeq Voting
+    End-to-End Unified 4-Model Football Tactical Analysis Engine:
+      Pass 1: Dual-YOLOv11 Detection + ByteTrack + Kalman Ball + Homography + Crops + 2FPS ResNet Sampling
+      Stage 1b: Model 3 Raw-Video Broadcast Action Spotting (ResNet-152 ONNX + PCA-512 -> ActionSpotter INT8)
+      Stage 2: Team Clustering + Model 4 Jersey Legibility/OCR Voting
       Stage 3: Ball Interpolation + Kinematics Smoothing + Tactical Telemetry Extraction
       Pass 2: Broadcast Video + 2D Tactical Radar Rendering + Web H.264 Encoding + JSON Export
     """
@@ -28,8 +31,10 @@ class MatchAnalysisPipeline:
     def __init__(self, cfg: EngineConfig):
         self.cfg = cfg
         self.pitch = FIFAPitchConfig()
+        print("[Init] Loading Dual-YOLOv11 detector & 32-keypoint pose weights...")
         self.detector = DualModelDetector(cfg)
-        self.team_classifier = SigLIPTeamClassifier()
+        self.team_classifier = SigLIPTeamClassifier(enable_siglip=cfg.enable_siglip)
+        print("[Init] Loading Model 4 Jersey Gate & offline OCR...")
         self.jersey_recognizer = JerseyRecognizer(
             onnx_path=cfg.jersey_legibility_onnx_path or None,
             pt_path=cfg.jersey_legibility_pt_path or None,
@@ -40,6 +45,12 @@ class MatchAnalysisPipeline:
             torso_crop_box=cfg.jersey_torso_crop_box,
             enable_ocr=cfg.enable_jersey_ocr,
         )
+        self.feature_extractor = SoccerNetVideoFeatureExtractor(
+            resnet_onnx_path=cfg.resnet_onnx_path or None,
+            pca_weights_path=cfg.pca_weights_path or None,
+            target_fps=2.0,
+        )
+        self.action_spotter = ActionSpotter()
 
     @staticmethod
     def _crop_full_person(frame_bgr: np.ndarray, box: np.ndarray) -> Optional[np.ndarray]:
@@ -92,15 +103,21 @@ class MatchAnalysisPipeline:
         frame_records = []
         raw_ball_xy = []
         jersey_samples = []
+        spotting_frames_bgr = []
         sample_stride = max(1, int(fps // 2))       # Sample team jersey colors ~2 Hz
+        spotting_stride = max(1, int(round(fps / 2.0)))  # Sample 2FPS frames for Model 3 ResNet-152
+        spotting_eff_fps = fps / float(spotting_stride)
         full_crop_stride = max(1, int(fps // 4))    # Sample full person crops ~4 Hz for Model 4
         pitch_stride = max(1, int(self.cfg.pitch_stride))
 
-        pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)")
+        pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)", mininterval=0.25)
         for f_idx in pbar:
             ok, frame = cap.read()
             if not ok:
                 break
+
+            if self.cfg.enable_action_spotting and (f_idx % spotting_stride == 0):
+                spotting_frames_bgr.append(cv2.resize(frame, (224, 224), interpolation=cv2.INTER_LINEAR))
 
             run_pitch = (homography.H is None) or (f_idx % pitch_stride == 0)
             det = self.detector.infer_frame(frame, run_pitch=run_pitch)
@@ -173,9 +190,42 @@ class MatchAnalysisPipeline:
                         ent["pitch_xy"] = m
 
         # ======================================================================
+        # STAGE 1b: Model 3 Raw-Video Broadcast Action Spotting
+        # ======================================================================
+        broadcast_events = []
+        broadcast_spotting_ms: Optional[float] = None
+        broadcast_spotting_backend: Optional[str] = None
+        if self.cfg.enable_action_spotting and spotting_frames_bgr and self.feature_extractor.is_available():
+            print("[Stage 1b] Extracting ResNet-152 + PCA-512 features & running Model 3 ONNX...")
+            t_spot = time.perf_counter()
+            try:
+                feats_512 = self.feature_extractor.extract_from_frames(spotting_frames_bgr)
+                if len(feats_512) > 0:
+                    spot_res = self.action_spotter.spot_events(
+                        feats_512,
+                        half=1,
+                        fps=spotting_eff_fps,
+                        min_conf=self.cfg.action_spotting_min_conf,
+                        nms_window_sec=5.0,
+                    )
+                    clip_dur = round(len(frame_records) / max(1.0, fps), 2)
+                    broadcast_events = [
+                        ev for ev in spot_res.get("events", [])
+                        if float(ev.get("time_s", 0.0)) <= clip_dur + 0.25
+                    ]
+                    broadcast_spotting_backend = str(spot_res.get("backend_used") or "onnx_int8")
+                broadcast_spotting_ms = round((time.perf_counter() - t_spot) * 1000.0, 2)
+            except Exception as e:
+                print(f"[Stage 1b] Action Spotting skipped due to error: {e}")
+                broadcast_events = []
+                broadcast_spotting_backend = "error_fallback"
+        elif self.cfg.enable_action_spotting:
+            broadcast_spotting_backend = "extractor_unavailable"
+
+        # ======================================================================
         # STAGE 2: Ball Interpolation, Team Classification & Model 4 Jersey OCR
         # ======================================================================
-        print("[Stage 2] Fitting SigLIP Team Classifier & Running Model 4 Jersey Recognition...")
+        print("[Stage 2] Clustering Teams & Running Model 4 Jersey Recognition...")
         self.team_classifier.fit(jersey_samples)
         stabilize_team_assignments(
             frame_records,
@@ -228,6 +278,7 @@ class MatchAnalysisPipeline:
         print("[Stage 3] Computing Speeds, Sprints, Passes, Voronoi Control, Convex Hull & xT...")
         tactics_engine = TacticalAnalyticsEngine(self.cfg, self.pitch, fps=fps)
         telemetry = tactics_engine.analyze(frame_records, jersey_assignments=jersey_assignments)
+        telemetry["broadcast_events"] = broadcast_events
 
         telemetry["match_info"] = {
             "source_video": vpath.name,
@@ -241,6 +292,8 @@ class MatchAnalysisPipeline:
             "ball_coverage_pct": round(100.0 * ball_tracked_frames / max(1, len(frame_records)), 2),
             "processing_time_s": 0.0,
             "jersey_recognition": jersey_diag,
+            "broadcast_spotting_ms": broadcast_spotting_ms,
+            "broadcast_spotting_backend": broadcast_spotting_backend,
         }
 
         # ======================================================================

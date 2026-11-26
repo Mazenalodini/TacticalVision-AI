@@ -3,7 +3,7 @@ import type { Lang } from "@/lib/i18n";
 
 export interface TacticalInsight {
   id: string;
-  category: "territorial" | "progression" | "defensive" | "physical";
+  category: "territorial" | "progression" | "defensive" | "physical" | "broadcast";
   title: string;
   metric: string; // Pure LTR numeric readout (never mixed with RTL words)
   metricUnit?: string; // Localized unit rendered cleanly outside BidiNum
@@ -194,7 +194,7 @@ export function generateCoachBrief(
     ? `استثمار التفوق الحركي للاعب #${sprinterId} بتوجيه الكرات الطولية في المساحة خلف خط دفاع الخصم.`
     : `Channel #${sprinterId}'s sprint pace into direct runs in behind the opponent's high defensive line.`;
 
-  return [
+  const insights: TacticalInsight[] = [
     {
       id: "territorial",
       category: "territorial",
@@ -250,4 +250,30 @@ export function generateCoachBrief(
       coachTakeaway: physTakeaway,
     },
   ];
+
+  const bcast = telemetry.broadcast_events || [];
+  if (bcast.length > 0) {
+    const topEvent = [...bcast].sort((a, b) => b.confidence - a.confidence)[0];
+    const peakPct = Math.round(topEvent.confidence * 100);
+    insights.push({
+      id: "broadcast",
+      category: "broadcast",
+      title: isAr
+        ? "رصد أحداث البث الزمني (النموذج 3)"
+        : "Broadcast Action Spotting (Model 3)",
+      metric: `${bcast.length}`,
+      metricUnit: isAr ? "حدث بث" : "events",
+      metricSub: `${topEvent.label} · ${peakPct}%`,
+      badge: isAr ? "كشف زمني آلي" : "Temporal AI",
+      badgeColor: "cyan",
+      analysis: isAr
+        ? `التقط النموذج الزمني ${bcast.length} حدث بث مباشرة من لقطات الفيديو عبر تصنيف SoccerNet الـ 17، بأعلى درجة ثقة لحدث ${topEvent.label} عند الثانية ${topEvent.time_s.toFixed(1)}ث (${peakPct}%).`
+        : `Model 3 detected ${bcast.length} broadcast action moment(s) directly from raw video across 17 SoccerNet classes, led by ${topEvent.label} at ${topEvent.time_s.toFixed(1)}s (${peakPct}% confidence).`,
+      coachTakeaway: isAr
+        ? "انقر على أي معيّن في الخط الزمني أسفل الفيديو للانتقال الفوري إلى لحظة الحدث."
+        : "Click any diamond pin on the timeline bar under the video to jump directly to the detected broadcast moment.",
+    });
+  }
+
+  return insights;
 }

@@ -254,10 +254,15 @@ class ActionSpotter:
 
         windows = []
         for st in starts:
-            buf = np.zeros((W, 512), dtype=np.float32)
-            end = min(T, st + W)
-            buf[:end - st] = arr[st:end]
-            windows.append(buf)
+            if T < W:
+                # Edge-pad short clips (3s-30s) rather than zero-padding to avoid empty-frame bias
+                padded = np.pad(arr, ((0, W - T), (0, 0)), mode="edge")
+                windows.append(np.ascontiguousarray(padded[:W], dtype=np.float32))
+            else:
+                buf = np.zeros((W, 512), dtype=np.float32)
+                end = min(T, st + W)
+                buf[:end - st] = arr[st:end]
+                windows.append(buf)
 
         batch_arr = np.ascontiguousarray(np.stack(windows, axis=0), dtype=np.float32)
 
@@ -378,3 +383,49 @@ class ActionSpotter:
             "category_counts": dict(category_counts),
             "density_bins": density_bins,
         }
+
+    def spot_video(
+        self,
+        video_path: str | Path,
+        max_seconds: Optional[float] = None,
+        min_conf: float = 0.25,
+        nms_window_sec: float = 5.0,
+        resnet_onnx_path: Optional[str | Path] = None,
+        pca_weights_path: Optional[str | Path] = None,
+    ) -> Dict[str, Any]:
+        """
+        End-to-end Model 3 raw-video inference (ResNet-152 ONNX + PCA-512 -> ActionSpotter INT8).
+        Degrades gracefully returning empty events if feature extractor weights are unavailable.
+        """
+        from .video_feature_extractor import SoccerNetVideoFeatureExtractor
+
+        extractor = SoccerNetVideoFeatureExtractor(
+            resnet_onnx_path=resnet_onnx_path,
+            pca_weights_path=pca_weights_path,
+            target_fps=self.fps,
+        )
+        if not extractor.is_available():
+            return {
+                "events": [],
+                "inference_ms": 0.0,
+                "backend_used": "unavailable",
+            }
+
+        t0 = time.perf_counter()
+        feats, eff_fps = extractor.extract_from_video(video_path, max_seconds=max_seconds)
+        if len(feats) == 0:
+            return {
+                "events": [],
+                "inference_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+                "backend_used": self.backend_used or "unavailable",
+            }
+
+        res = self.spot_events(
+            feats,
+            half=1,
+            fps=eff_fps,
+            min_conf=min_conf,
+            nms_window_sec=nms_window_sec,
+        )
+        res["inference_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)
+        return res

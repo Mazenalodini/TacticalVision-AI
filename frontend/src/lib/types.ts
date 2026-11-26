@@ -167,10 +167,12 @@ export interface EngineDiagnostics {
   ball_coverage_pct: number;
   processing_time_s: number;
   jersey_recognition?: JerseyRecognitionDiagnostics | null;
+  broadcast_spotting_ms?: number | null;
+  broadcast_spotting_backend?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Complete Telemetry — all 8 top-level keys
+// Complete Telemetry — all 8 core keys + Model 3 broadcast_events
 // ═══════════════════════════════════════════════════════════════════
 
 export interface Telemetry {
@@ -182,6 +184,7 @@ export interface Telemetry {
   frames: TimelineFrame[];
   match_info: MatchInfo;
   engine_diagnostics: EngineDiagnostics;
+  broadcast_events?: ActionSpottingEvent[];
 }
 
 // ═══════════════════════════════════════════════════════════════════

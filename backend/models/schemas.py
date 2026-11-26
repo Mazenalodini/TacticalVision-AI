@@ -166,15 +166,28 @@ class HomographySummary(BaseModel):
     mean_inlier_reproj_error_m: Optional[float] = None
 
 
+class ActionSpottingEvent(BaseModel):
+    class_id: int
+    label: str
+    category: str
+    half: int
+    frame_idx: int
+    time_s: float
+    minute_str: str
+    confidence: float
+
+
 class EngineDiagnostics(BaseModel):
     homography: HomographySummary
     ball_coverage_pct: float
     processing_time_s: float
     jersey_recognition: Optional[dict[str, Any]] = None
+    broadcast_spotting_ms: Optional[float] = None
+    broadcast_spotting_backend: Optional[str] = None
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Complete Telemetry — all 8 top-level keys
+# Complete Telemetry — all 8 core keys + optional Model 3 broadcast_events
 # ══════════════════════════════════════════════════════════════════════
 
 class Telemetry(BaseModel):
@@ -186,6 +199,7 @@ class Telemetry(BaseModel):
     frames: list[TimelineFrame]
     match_info: MatchInfo
     engine_diagnostics: EngineDiagnostics
+    broadcast_events: list[ActionSpottingEvent] = Field(default_factory=list)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -230,16 +244,6 @@ class JobStatus(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 # 4-Model AI Suite & Action Spotting Schemas
 # ══════════════════════════════════════════════════════════════════════
-
-class ActionSpottingEvent(BaseModel):
-    class_id: int
-    label: str
-    category: str
-    half: int
-    frame_idx: int
-    time_s: float
-    minute_str: str
-    confidence: float
 
 
 class ActionSpottingDensityBin(BaseModel):

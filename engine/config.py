@@ -149,7 +149,13 @@ class EngineConfig:
     possession_radius_m: float = 2.8
     min_pass_distance_m: float = 4.0
     min_owner_frames: int = 3
-    # Model 4: Jersey Legibility Gate + PARSeq OCR
+    # Team Classifier & Model 3: Raw-Video Temporal Action Spotting
+    enable_siglip: bool = True
+    enable_action_spotting: bool = True
+    resnet_onnx_path: str = ""
+    pca_weights_path: str = ""
+    action_spotting_min_conf: float = 0.15
+    # Model 4: Jersey Legibility Gate + Offline OCR
     enable_jersey_ocr: bool = True
     jersey_legibility_onnx_path: str = ""
     jersey_legibility_pt_path: str = ""
@@ -231,3 +237,8 @@ class EngineConfig:
                 self.thresholds_path = str(v1_thresh)
             elif legacy_thresh.exists():
                 self.thresholds_path = str(legacy_thresh)
+
+        if not self.resnet_onnx_path:
+            self.resnet_onnx_path = str(models_dir / "resnet152_tf2_backbone.onnx")
+        if not self.pca_weights_path:
+            self.pca_weights_path = str(models_dir / "soccernet_pca512_tf2_weights.npz")

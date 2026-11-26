@@ -99,3 +99,32 @@ def test_spot_events_on_demo_test_000_half1():
         times.sort()
         for t1, t2 in zip(times, times[1:]):
             assert (t2 - t1) >= 5.0, f"NMS violation for '{label}': {t1}s vs {t2}s"
+
+
+def test_raw_video_feature_extractor_resnet_pca_to_action_spotter():
+    import cv2
+    from engine.video_feature_extractor import SoccerNetVideoFeatureExtractor
+
+    sample_video = ROOT / "outputs" / "match_01_counter" / "broadcast_analyzed.mp4"
+    extractor = SoccerNetVideoFeatureExtractor()
+    assert extractor.is_available(), "Missing resnet152_tf2_backbone.onnx or soccernet_pca512_tf2_weights.npz"
+    assert sample_video.exists(), "Sample match video missing"
+
+    cap = cv2.VideoCapture(str(sample_video))
+    frames = []
+    for _ in range(4):
+        ok, fr = cap.read()
+        if ok:
+            frames.append(fr)
+    cap.release()
+    assert len(frames) == 4
+
+    feats = extractor.extract_from_frames(frames)
+    assert feats.shape == (4, 512)
+    assert feats.dtype == np.float32
+    assert np.all(np.isfinite(feats))
+
+    spotter = ActionSpotter()
+    probs = spotter.predict_probabilities(feats)
+    assert probs.shape == (4, 17)
+    assert np.all((probs >= 0.0) & (probs <= 1.0))

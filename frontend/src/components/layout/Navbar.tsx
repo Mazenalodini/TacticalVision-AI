@@ -10,8 +10,6 @@ import {
   Compass,
   LayoutGrid,
   Play,
-  Activity,
-  Cpu,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { fetchMatches, API_BASE } from "@/lib/api";
@@ -174,8 +172,6 @@ export function Navbar() {
   }, [loadNavData]);
 
   const isHub = pathname === "/";
-  const isSpotting = pathname.startsWith("/action-spotting");
-  const isModels = pathname.startsWith("/models");
   const activeMatchId = pathname.startsWith("/match/")
     ? decodeURIComponent(pathname.replace("/match/", "").split("/")[0])
     : null;
@@ -213,15 +209,15 @@ export function Navbar() {
             </Link>
           </div>
 
-          {/* ── Center: Persistent Workspace Navigation ── */}
+          {/* ── Center: Single-Row Workspace Navigation ── */}
           <nav
             aria-label="Primary workspace navigation"
-            className="hidden md:flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07]"
+            className="hidden md:flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07] shrink-0"
           >
             {/* 1. Match Library */}
             <Link
               href="/"
-              className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 isHub ? "text-white" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -232,16 +228,16 @@ export function Navbar() {
                   className="absolute inset-0 rounded-lg bg-white/[0.09] border border-white/15 shadow-sm"
                 />
               )}
-              <LayoutGrid className="w-3.5 h-3.5 relative z-10 text-tv-cyan" />
+              <LayoutGrid className="w-3.5 h-3.5 relative z-10 text-tv-cyan shrink-0" />
               <span className="relative z-10">{t("nav.hub")}</span>
             </Link>
 
             {/* 2. Quick Match Switcher Dropdown */}
-            <div ref={switcherRef} className="relative">
+            <div ref={switcherRef} className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setSwitcherOpen((prev) => !prev)}
-                className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   activeMatchId || switcherOpen
                     ? "text-white"
                     : "text-slate-400 hover:text-white"
@@ -341,49 +337,13 @@ export function Navbar() {
               </AnimatePresence>
             </div>
 
-            {/* 3. Action Spotting Studio (Model 3) */}
-            <Link
-              href="/action-spotting"
-              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                isSpotting ? "text-white" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {isSpotting && (
-                <motion.span
-                  layoutId="navbar-workspace-pill"
-                  transition={{ type: "spring", stiffness: 450, damping: 34 }}
-                  className="absolute inset-0 rounded-lg bg-white/[0.09] border border-white/15 shadow-sm"
-                />
-              )}
-              <Activity className="w-3.5 h-3.5 relative z-10 text-tv-mint" />
-              <span className="relative z-10">{t("nav.action_spotting")}</span>
-            </Link>
-
-            {/* 4. AI Models & Benchmarks Lab */}
-            <Link
-              href="/models"
-              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                isModels ? "text-white" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {isModels && (
-                <motion.span
-                  layoutId="navbar-workspace-pill"
-                  transition={{ type: "spring", stiffness: 450, damping: 34 }}
-                  className="absolute inset-0 rounded-lg bg-white/[0.09] border border-white/15 shadow-sm"
-                />
-              )}
-              <Cpu className="w-3.5 h-3.5 relative z-10 text-tv-amber" />
-              <span className="relative z-10">{t("nav.models_lab")}</span>
-            </Link>
-
-            {/* 5. How It Works Workflow Drawer */}
+            {/* 3. How It Works Workflow Drawer */}
             <button
               type="button"
               onClick={() => setHowItWorksOpen(true)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
             >
-              <Compass className="w-3.5 h-3.5 text-tv-mint" />
+              <Compass className="w-3.5 h-3.5 text-tv-mint shrink-0" />
               <span>{t("nav.how_it_works")}</span>
             </button>
           </nav>
@@ -399,7 +359,7 @@ export function Navbar() {
                   ? t("hub.status_connected")
                   : t("hub.status_offline")
               }
-              className={`hidden lg:inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
+              className={`hidden lg:inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border transition-colors cursor-pointer ${
                 backendOnline === true
                   ? "bg-tv-mint/[0.08] border-tv-mint/25 text-tv-mint"
                   : backendOnline === false
@@ -437,7 +397,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setUploadOpen(true)}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-tv-cyan text-slate-950 hover:bg-tv-cyan/90 shadow-md shadow-tv-cyan/20 active:scale-[0.98] transition-all cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 bg-tv-cyan text-slate-950 hover:bg-tv-cyan/90 shadow-md shadow-tv-cyan/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.75]" />
               <span>{t("nav.analyze_cta")}</span>

@@ -136019,6 +136019,120 @@
       "mean_inlier_reproj_error_m": 0.717
     },
     "ball_coverage_pct": 90.67,
-    "processing_time_s": 237.9
-  }
+    "processing_time_s": 237.9,
+    "broadcast_spotting_ms": 28405.04,
+    "broadcast_spotting_backend": "onnx_int8"
+  },
+  "broadcast_events": [
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 4,
+      "time_s": 1.92,
+      "minute_str": "00:01",
+      "confidence": 0.1767
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 18,
+      "time_s": 8.64,
+      "minute_str": "00:08",
+      "confidence": 0.1549
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 24,
+      "time_s": 11.52,
+      "minute_str": "00:11",
+      "confidence": 0.1769
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 33,
+      "time_s": 15.84,
+      "minute_str": "00:15",
+      "confidence": 0.164
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 34,
+      "time_s": 16.32,
+      "minute_str": "00:16",
+      "confidence": 0.2089
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 42,
+      "time_s": 20.16,
+      "minute_str": "00:20",
+      "confidence": 0.2507
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 42,
+      "time_s": 20.16,
+      "minute_str": "00:20",
+      "confidence": 0.1918
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 53,
+      "time_s": 25.44,
+      "minute_str": "00:25",
+      "confidence": 0.2711
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 53,
+      "time_s": 25.44,
+      "minute_str": "00:25",
+      "confidence": 0.1969
+    },
+    {
+      "class_id": 1,
+      "label": "Kick-off",
+      "category": "set_piece",
+      "half": 1,
+      "frame_idx": 61,
+      "time_s": 29.28,
+      "minute_str": "00:29",
+      "confidence": 0.2451
+    },
+    {
+      "class_id": 3,
+      "label": "Substitution",
+      "category": "tactical",
+      "half": 1,
+      "frame_idx": 61,
+      "time_s": 29.28,
+      "minute_str": "00:29",
+      "confidence": 0.204
+    }
+  ]
 }

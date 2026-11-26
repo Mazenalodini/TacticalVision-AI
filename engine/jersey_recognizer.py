@@ -130,6 +130,7 @@ class JerseyRecognizer:
         self.ocr_available: bool = False
         self.ocr_status: str = "disabled"
         self._parseq: Any = None
+        self._rapidocr: Any = None
         self._ocr_tf: Any = None
 
         self._init_gate()
@@ -188,38 +189,84 @@ class JerseyRecognizer:
                 self.gate_backend = "unavailable"
 
     def _init_parseq(self) -> None:
-        """Attempt offline-safe pretrained PARSeq initialization with zero network hang."""
+        """Attempt offline-safe local PARSeq first; fall back cleanly to offline RapidOCR ONNX CPU."""
         try:
             import torch
             from torchvision import transforms
 
-            # If running offline, check if hub cache already exists locally before invoking torch.hub
-            offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
             hub_dir = Path(torch.hub.get_dir())
             has_local_cache = any(hub_dir.glob("baudm_parseq*")) if hub_dir.exists() else False
-            if offline and not has_local_cache:
-                self.ocr_available = False
-                self.ocr_status = "offline_no_cache"
+            if has_local_cache:
+                parseq = torch.hub.load(
+                    "baudm/parseq",
+                    "parseq",
+                    pretrained=True,
+                    trust_repo=True,
+                ).eval()
+                img_sz = parseq.hparams.img_size
+                self._ocr_tf = transforms.Compose([
+                    transforms.Resize(img_sz, transforms.InterpolationMode.BICUBIC),
+                    transforms.ToTensor(),
+                    transforms.Normalize(0.5, 0.5),
+                ])
+                self._parseq = parseq
+                self.ocr_available = True
+                self.ocr_status = "parseq_active"
                 return
+        except Exception:
+            pass
 
-            parseq = torch.hub.load(
-                "baudm/parseq",
-                "parseq",
-                pretrained=True,
-                trust_repo=True,
-            ).eval()
-            img_sz = parseq.hparams.img_size
-            self._ocr_tf = transforms.Compose([
-                transforms.Resize(img_sz, transforms.InterpolationMode.BICUBIC),
-                transforms.ToTensor(),
-                transforms.Normalize(0.5, 0.5),
-            ])
-            self._parseq = parseq
+        # Offline CPU Fallback: RapidOCR ONNX Runtime (fast, deterministic, zero internet needed)
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+
+            self._rapidocr = RapidOCR()
             self.ocr_available = True
-            self.ocr_status = "parseq_active"
+            self.ocr_status = "rapidocr_onnx_active"
         except Exception as e:
             self.ocr_available = False
             self.ocr_status = f"unavailable:{type(e).__name__}"
+
+    @staticmethod
+    def _enhance_torso_bgr(
+        crop_bgr: np.ndarray,
+        torso_box: Tuple[float, float, float, float] = DEFAULT_TORSO_CROP_BOX,
+    ) -> Optional[np.ndarray]:
+        """Crop torso region and upscale/contrast-enhance small broadcast crops for digit OCR."""
+        if crop_bgr is None or crop_bgr.size == 0:
+            return None
+        h, w = crop_bgr.shape[:2]
+        if w < 10 or h < 12:
+            return None
+        fx1, fy1, fx2, fy2 = torso_box
+        x1 = max(0, min(w - 1, int(round(w * fx1))))
+        y1 = max(0, min(h - 1, int(round(h * fy1))))
+        x2 = max(x1 + 1, min(w, int(round(w * fx2))))
+        y2 = max(y1 + 1, min(h, int(round(h * fy2))))
+        roi = crop_bgr[y1:y2, x1:x2]
+        if roi.size == 0:
+            return None
+
+        rh, rw = roi.shape[:2]
+        min_side = min(rh, rw)
+        if min_side < 64:
+            scale = max(2.0, min(4.0, 72.0 / float(max(min_side, 1))))
+            roi = cv2.resize(
+                roi,
+                (max(1, int(round(rw * scale))), max(1, int(round(rh * scale)))),
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+        # Gentle LAB CLAHE luminance contrast enhancement helps worn/shadowed jersey prints
+        try:
+            lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
+            l_ch, a_ch, b_ch = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+            l_ch = clahe.apply(l_ch)
+            roi = cv2.cvtColor(cv2.merge([l_ch, a_ch, b_ch]), cv2.COLOR_LAB2BGR)
+        except Exception:
+            pass
+        return roi
 
     def score_legibility(self, crops_bgr: List[np.ndarray]) -> np.ndarray:
         """Returns float32 array of probabilities strictly in [0.0, 1.0]."""
@@ -262,7 +309,7 @@ class JerseyRecognizer:
         max_leg = round(float(np.max(scores)), 3) if len(scores) > 0 else 0.0
         keep_idx = [i for i, s in enumerate(scores) if float(s) >= self.legibility_threshold]
 
-        if not keep_idx or not self.ocr_available or self._parseq is None:
+        if not keep_idx or not self.ocr_available or (self._parseq is None and self._rapidocr is None):
             return {
                 "jersey_number": None,
                 "jersey_confidence": None,
@@ -274,41 +321,68 @@ class JerseyRecognizer:
         keep_idx.sort(key=lambda i: float(scores[i]), reverse=True)
         chosen = keep_idx[:5]
 
-        import torch
-
-        ocr_tensors = []
-        valid_chosen_scores: List[float] = []
-        for idx in chosen:
-            torso_pil = crop_torso_pil(sampled[idx], self.torso_crop_box)
-            if torso_pil is not None:
-                ocr_tensors.append(self._ocr_tf(torso_pil))
-                valid_chosen_scores.append(float(scores[idx]))
-
-        if not ocr_tensors:
-            return {
-                "jersey_number": None,
-                "jersey_confidence": None,
-                "jersey_verified": False,
-                "legibility_score": max_leg,
-                "legible_crops_count": len(keep_idx),
-            }
-
-        with torch.no_grad():
-            ob = torch.stack(ocr_tensors)
-            logits = self._parseq(ob)
-            probs = logits.softmax(-1)
-            preds, p_confs = self._parseq.tokenizer.decode(probs)
-
         votes: Dict[int, float] = defaultdict(float)
-        for i_loc, (txt, conf_t) in enumerate(zip(preds, p_confs)):
-            num = extract_jersey_digits(txt)
-            if num is None:
-                continue
-            c_val = float(conf_t[:-1].prod().item()) if len(conf_t) > 1 else float(conf_t.mean().item())
-            if c_val >= self.parseq_min_crop_conf:
-                votes[num] += c_val * valid_chosen_scores[i_loc]
+        valid_count = 0
 
-        if not votes:
+        if self._parseq is not None and self._ocr_tf is not None:
+            import torch
+
+            ocr_tensors = []
+            valid_chosen_scores: List[float] = []
+            for idx in chosen:
+                torso_pil = crop_torso_pil(sampled[idx], self.torso_crop_box)
+                if torso_pil is not None:
+                    ocr_tensors.append(self._ocr_tf(torso_pil))
+                    valid_chosen_scores.append(float(scores[idx]))
+
+            if not ocr_tensors:
+                return {
+                    "jersey_number": None,
+                    "jersey_confidence": None,
+                    "jersey_verified": False,
+                    "legibility_score": max_leg,
+                    "legible_crops_count": len(keep_idx),
+                }
+
+            valid_count = len(valid_chosen_scores)
+            with torch.no_grad():
+                ob = torch.stack(ocr_tensors)
+                logits = self._parseq(ob)
+                probs = logits.softmax(-1)
+                preds, p_confs = self._parseq.tokenizer.decode(probs)
+
+            for i_loc, (txt, conf_t) in enumerate(zip(preds, p_confs)):
+                num = extract_jersey_digits(txt)
+                if num is None:
+                    continue
+                c_val = float(conf_t[:-1].prod().item()) if len(conf_t) > 1 else float(conf_t.mean().item())
+                if c_val >= self.parseq_min_crop_conf:
+                    votes[num] += c_val * valid_chosen_scores[i_loc]
+        else:
+            # Stage 4b Offline Fallback: RapidOCR ONNX on contrast-enhanced torso crops
+            for idx in chosen:
+                torso_bgr = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box)
+                if torso_bgr is None:
+                    continue
+                valid_count += 1
+                res_list, _ = self._rapidocr(torso_bgr)
+                if not res_list:
+                    res_list, _ = self._rapidocr(torso_bgr, use_det=False, use_cls=False, use_rec=True)
+                if not res_list:
+                    continue
+                for item in res_list:
+                    if not isinstance(item, (list, tuple)) or len(item) < 2:
+                        continue
+                    txt = str(item[-2])
+                    try:
+                        c_val = float(item[-1])
+                    except (TypeError, ValueError):
+                        continue
+                    num = extract_jersey_digits(txt)
+                    if num is not None and c_val >= self.parseq_min_crop_conf:
+                        votes[num] += c_val * float(scores[idx])
+
+        if not votes or valid_count == 0:
             return {
                 "jersey_number": None,
                 "jersey_confidence": None,
@@ -318,7 +392,7 @@ class JerseyRecognizer:
             }
 
         best_num, best_weight = max(votes.items(), key=lambda kv: kv[1])
-        norm_conf = round(min(1.0, best_weight / max(1, len(valid_chosen_scores))), 3)
+        norm_conf = round(min(1.0, best_weight / max(1, valid_count)), 3)
         verified = norm_conf >= self.min_track_ocr_conf
 
         return {

@@ -314,6 +314,7 @@ export default function WarRoomPage({
                   {telemetry?.events && (
                     <EventTimeline
                       events={telemetry.events}
+                      broadcastEvents={telemetry.broadcast_events}
                       currentTime={currentTime}
                       duration_s={match.duration_s || 30.0}
                       onSeekToFrame={(f) => videoPlayerRef.current?.seekToFrame(f)}
@@ -421,8 +422,10 @@ export default function WarRoomPage({
                   {telemetry?.events && (
                     <EventFeed
                       events={telemetry.events}
+                      broadcastEvents={telemetry.broadcast_events}
                       currentTime={currentTime}
                       onSeekToFrame={(f) => videoPlayerRef.current?.seekToFrame(f)}
+                      onSeekToTime={(tm) => videoPlayerRef.current?.seekToTime(tm)}
                       onSelectPlayer={(id) => setSelectedPlayerId(id)}
                     />
                   )}

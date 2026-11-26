@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,33 +150,42 @@ class ProgressParserStream:
         if not text:
             return
 
+        # Init milestone
+        if "[Init]" in text:
+            self.on_progress("detecting", 12.0, "Loading YOLOv11 & ONNX Neural Weights...")
+            return
+
+        # Stage 1b: Model 3 Raw Video Action Spotting
+        if "[Stage 1b]" in text:
+            self.on_progress("classifying", 56.0, "Running Model 3 Broadcast Action Spotting...")
+            return
+
         # Stage 2 marker
         if "[Stage 2]" in text:
-            self.on_progress("classifying", 55.0, "Fitting SigLIP & Stabilizing Team IDs...")
+            self.on_progress("classifying", 62.0, "Clustering Teams & Recognizing Jersey Numbers...")
             return
 
         # Stage 3 marker
         if "[Stage 3]" in text:
-            self.on_progress("computing", 68.0, "Extracting Tactical & Kinematic Telemetry...")
+            self.on_progress("computing", 70.0, "Extracting Tactical & Kinematic Telemetry...")
             return
 
         # Pass 2 marker
         if "Pass 2/2" in text:
             self.current_pass = 2
-            # Try parsing percentage from tqdm e.g. " 45%|"
             pct_match = re.search(r"(\d+)%\|", text)
             if pct_match:
                 pct = float(pct_match.group(1))
-                # Map 0..100% of pass 2 to 78%..90%
-                overall = 78.0 + (pct / 100.0) * 12.0
+                # Map 0..100% of pass 2 to 76%..90%
+                overall = 76.0 + (pct / 100.0) * 14.0
                 self.on_progress("encoding", overall, f"Rendering Broadcast Overlays & Radar ({int(pct)}%)...")
             else:
-                self.on_progress("encoding", 78.0, "Rendering Broadcast Overlays & Radar...")
+                self.on_progress("encoding", 76.0, "Rendering Broadcast Overlays & Radar...")
             return
 
         # Encoding marker
         if "[Encoding]" in text:
-            self.on_progress("encoding", 92.0, "Transcoding Web H.264 Video...")
+            self.on_progress("encoding", 93.0, "Transcoding Web H.264 Video...")
             return
 
         # Pass 1 tqdm detection
@@ -183,8 +193,8 @@ class ProgressParserStream:
             pct_match = re.search(r"(\d+)%\|", text)
             if pct_match:
                 pct = float(pct_match.group(1))
-                # Map 0..100% of pass 1 to 5%..50%
-                overall = 5.0 + (pct / 100.0) * 45.0
+                # Map 0..100% of pass 1 to 15%..52%
+                overall = 15.0 + (pct / 100.0) * 37.0
                 self.on_progress("detecting", overall, f"Dual-YOLOv11 Detection & Tracking ({int(pct)}%)...")
 
 
@@ -260,6 +270,7 @@ def main() -> int:
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+        progress_callback("detecting", 8.0, "Importing CV & ONNX Runtime Engine...")
         import torch
         from engine.config import EngineConfig
         from engine.pipeline import MatchAnalysisPipeline
@@ -293,10 +304,13 @@ def main() -> int:
             thresholds_path=thresholds_path if Path(thresholds_path).exists() else "",
             det_imgsz=det_imgsz,
             pitch_imgsz=pitch_imgsz,
+            enable_siglip=not use_cpu_fast,
             enable_jersey_ocr=bool(args.enable_jersey_ocr),
         )
 
+        progress_callback("detecting", 10.0, "Loading YOLOv11 & ONNX Runtime Models...")
         pipeline = MatchAnalysisPipeline(cfg)
+        progress_callback("detecting", 15.0, "Dual-YOLOv11 Detection & Tracking (0%)...")
         result = pipeline.run(
             video_path=str(video_path),
             output_dir=str(output_dir),
@@ -335,7 +349,7 @@ def main() -> int:
 
     except Exception as e:
         error_msg = str(e)
-        sys.stderr.write(f"\n[Worker Error] {error_msg}\n")
+        sys.stderr.write(f"\n[Worker Error] {error_msg}\n{traceback.format_exc()}\n")
         update_job_status(
             jobs_dir=jobs_dir,
             job_id=args.job_id,
