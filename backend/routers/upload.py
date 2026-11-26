@@ -28,7 +28,8 @@ async def analyze_match(
     file: UploadFile = File(...),
     title: str = Form("User Uploaded Match"),
     mode: str = Form("cpu_quick"),
-    max_seconds: float = Form(3.0),
+    max_seconds: float = Form(0.0),
+    start_seconds: float = Form(0.0),
     remote_gpu_url: Optional[str] = Form(None),
     enable_jersey_ocr: bool = Form(True),
 ):
@@ -105,6 +106,7 @@ async def analyze_match(
         title=title,
         mode=mode,
         max_seconds=max_seconds,
+        start_seconds=start_seconds,
         enable_jersey_ocr=enable_jersey_ocr,
     )
 

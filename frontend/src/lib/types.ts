@@ -117,7 +117,7 @@ export interface Heatmaps {
 export interface FramePlayer {
   id: number; // track_id
   team: 0 | 1;
-  role: "p" | "gk"; // ⚠️ abbreviated vs PlayerStat.role
+  role: "p" | "gk" | "referee"; // ⚠️ abbreviated vs PlayerStat.role
   x: number; // pitch X (0–105 m)
   y: number; // pitch Y (0–68 m)
   spd: number; // km/h

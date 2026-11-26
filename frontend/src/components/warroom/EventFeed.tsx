@@ -66,7 +66,8 @@ export function EventFeed({
 
   const playerLabel = (trackId: number) => {
     const id = resolvePlayerIdentity(trackId, statMap.get(trackId) ?? null, overrides);
-    return id.customName ? `${id.customName} ${id.badgeText}` : id.badgeText;
+    const shortId = id.isVerified ? id.badgeText : `#${trackId}`;
+    return id.customName ? `${id.customName} ${shortId}` : shortId;
   };
 
   type UnifiedFeedItem =

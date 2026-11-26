@@ -68,6 +68,7 @@ class MatchAnalysisPipeline:
         video_path: str,
         output_dir: str,
         max_seconds: Optional[float] = None,
+        start_seconds: float = 0.0,
     ) -> Dict[str, Any]:
         t_start = time.perf_counter()
         vpath = Path(video_path)
@@ -80,9 +81,16 @@ class MatchAnalysisPipeline:
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if max_seconds is not None:
-            total_frames = min(total_frames, int(fps * max_seconds))
+        raw_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        start_frame = max(0, int(round(max(0.0, float(start_seconds or 0.0)) * fps)))
+        if start_frame > 0 and start_frame < raw_total_frames:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        remaining_frames = max(0, raw_total_frames - start_frame)
+        # max_seconds=0 or None means "Full Video" (from start_seconds to end) — no truncation
+        if max_seconds is not None and max_seconds > 0:
+            total_frames = min(remaining_frames, int(round(fps * max_seconds)))
+        else:
+            total_frames = remaining_frames
 
         print(f"\n[Pipeline] Analyzing: {vpath.name} ({width}x{height} @ {fps:.1f} FPS, {total_frames} frames)")
 
@@ -232,6 +240,7 @@ class MatchAnalysisPipeline:
             self.team_classifier,
             player_id=self.cfg.player_id,
             goalkeeper_id=self.cfg.goalkeeper_id,
+            referee_id=self.cfg.referee_id,
         )
 
         if self.cfg.enable_jersey_ocr:
@@ -310,6 +319,8 @@ class MatchAnalysisPipeline:
         w_radar = cv2.VideoWriter(str(raw_radar), fourcc, fps, (renderer.radar_w, renderer.radar_h))
 
         cap = cv2.VideoCapture(str(vpath))
+        if start_frame > 0 and start_frame < raw_total_frames:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         preview_frames = []
         preview_indices = set(np.linspace(0, max(0, len(frame_records) - 1), 4, dtype=int).tolist())
 

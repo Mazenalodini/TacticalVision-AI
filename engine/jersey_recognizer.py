@@ -195,8 +195,17 @@ class JerseyRecognizer:
             from torchvision import transforms
 
             hub_dir = Path(torch.hub.get_dir())
-            has_local_cache = any(hub_dir.glob("baudm_parseq*")) if hub_dir.exists() else False
-            if has_local_cache:
+            ckpt_dir = hub_dir / "checkpoints"
+            has_local_repo = any(hub_dir.glob("baudm_parseq*")) if hub_dir.exists() else False
+            has_local_ckpt = (
+                ckpt_dir.exists()
+                and any(
+                    p.stat().st_size > 10_000_000
+                    for p in ckpt_dir.glob("parseq*.pt")
+                    if not (ckpt_dir / f"{p.name}.partial").exists()
+                )
+            )
+            if has_local_repo and has_local_ckpt:
                 parseq = torch.hub.load(
                     "baudm/parseq",
                     "parseq",
@@ -370,36 +379,52 @@ class JerseyRecognizer:
                 if self._is_accepted_digit_read(num, c_val):
                     votes[num] += c_val * valid_chosen_scores[i_loc]
         else:
-            # Stage 4b Offline Fallback: Multi-scale RapidOCR ONNX on contrast-enhanced torso crops
+            # Stage 4b Offline Fallback: Recognition-only RapidOCR ONNX on multi-crop bicubic grids
+            crop_boxes = [
+                self.torso_crop_box,
+                (0.15, 0.14, 0.85, 0.56),
+            ]
             for idx in chosen:
-                torso_bgr = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box, extra_scale=1.0)
-                if torso_bgr is None:
+                raw_crop = sampled[idx]
+                if raw_crop is None or raw_crop.size == 0:
                     continue
-                valid_count += 1
-                res_list, _ = self._rapidocr(torso_bgr)
-                if not res_list:
-                    torso_hi = self._enhance_torso_bgr(sampled[idx], self.torso_crop_box, extra_scale=1.5)
-                    res_list, _ = self._rapidocr(
-                        torso_hi if torso_hi is not None else torso_bgr,
-                        use_det=False,
-                        use_cls=False,
-                        use_rec=True,
+                ch_raw, cw_raw = raw_crop.shape[:2]
+                if cw_raw < 14 or ch_raw < 14:
+                    continue
+                crop_had_valid = False
+                for tbox in crop_boxes:
+                    fx1, fy1, fx2, fy2 = tbox
+                    x1 = max(0, min(cw_raw - 1, int(round(cw_raw * fx1))))
+                    y1 = max(0, min(ch_raw - 1, int(round(ch_raw * fy1))))
+                    x2 = max(x1 + 1, min(cw_raw, int(round(cw_raw * fx2))))
+                    y2 = max(y1 + 1, min(ch_raw, int(round(ch_raw * fy2))))
+                    roi = raw_crop[y1:y2, x1:x2]
+                    if roi.size < 16 or roi.shape[0] < 8 or roi.shape[1] < 8:
+                        continue
+                    up = cv2.resize(
+                        roi,
+                        (max(96, roi.shape[1] * 4), max(96, roi.shape[0] * 4)),
+                        interpolation=cv2.INTER_CUBIC,
                     )
-                if not res_list:
-                    continue
-                for item in res_list:
-                    if not isinstance(item, (list, tuple)) or len(item) < 2:
+                    crop_had_valid = True
+                    res_list, _ = self._rapidocr(up, use_det=False, use_cls=False, use_rec=True)
+                    if not res_list:
                         continue
-                    txt = str(item[-2]).strip()
-                    if any(ch.isalpha() for ch in txt) and not txt.startswith("#"):
-                        continue
-                    try:
-                        c_val = float(item[-1])
-                    except (TypeError, ValueError):
-                        continue
-                    num = extract_jersey_digits(txt)
-                    if self._is_accepted_digit_read(num, c_val):
-                        votes[num] += c_val * float(scores[idx])
+                    for item in res_list:
+                        if not isinstance(item, (list, tuple)) or len(item) < 2:
+                            continue
+                        txt = str(item[-2]).strip()
+                        if any(ch.isalpha() for ch in txt) and not txt.startswith("#"):
+                            continue
+                        try:
+                            c_val = float(item[-1])
+                        except (TypeError, ValueError):
+                            continue
+                        num = extract_jersey_digits(txt)
+                        if self._is_accepted_digit_read(num, c_val):
+                            votes[num] += c_val * float(scores[idx])
+                if crop_had_valid:
+                    valid_count += 1
 
         if not votes or valid_count == 0:
             return {

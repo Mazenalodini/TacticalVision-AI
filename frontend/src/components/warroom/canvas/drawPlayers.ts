@@ -163,7 +163,8 @@ export function drawPlayers(
 
     const [cx, cy] = pitchToCanvas(player.x, player.y, vp);
     const isTeam0 = player.team === 0;
-    const teamColor = isTeam0 ? "#38BDF8" : "#FB7185";
+    const isReferee = player.role === "referee";
+    const teamColor = isReferee ? "#FACC15" : isTeam0 ? "#38BDF8" : "#FB7185";
     const isSelected = selectedPlayerId === player.id;
     const isHovered = hoveredPlayerId === player.id;
     const isGK = player.role === "gk";
@@ -239,8 +240,15 @@ export function drawPlayers(
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // Honest Identity: `#jn ✓` when Model 4 or Coach verified, else muted `T{id}` fallback
+    // Honest Identity: `#jn ✓` when Model 4 or Coach verified, else clean dot (no fake T#)
     const identity = resolvePlayerIdentity(player.id, player, overrides);
+
+    // Referees: yellow dot, zero text
+    if (isReferee) {
+      ctx.restore();
+      continue;
+    }
+
     if (identity.isVerified) {
       ctx.beginPath();
       ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
@@ -260,16 +268,18 @@ export function drawPlayers(
       ctx.stroke();
     }
 
-    // Razor-sharp Player ID or Verified Jersey Label (`#jn` vs `T{id}`)
-    ctx.fillStyle = isTeam0
-      ? (identity.isVerified ? "#04101A" : "rgba(4, 16, 26, 0.78)")
-      : (identity.isVerified ? "#FFFFFF" : "rgba(255, 255, 255, 0.82)");
-    ctx.font = identity.isVerified
-      ? "bold 8.8px var(--font-jetbrains), monospace"
-      : "600 7.6px var(--font-jetbrains), monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(identity.canvasLabel, cx, cy + 0.5);
+    // Razor-sharp Verified Jersey Label only — unverified players render clean dots
+    if (identity.canvasLabel) {
+      ctx.fillStyle = isTeam0
+        ? (identity.isVerified ? "#04101A" : "rgba(4, 16, 26, 0.78)")
+        : (identity.isVerified ? "#FFFFFF" : "rgba(255, 255, 255, 0.82)");
+      ctx.font = identity.isVerified
+        ? "bold 8.8px var(--font-jetbrains), monospace"
+        : "600 7.6px var(--font-jetbrains), monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(identity.canvasLabel, cx, cy + 0.5);
+    }
 
     ctx.restore();
   }

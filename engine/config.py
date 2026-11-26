@@ -176,7 +176,7 @@ class EngineConfig:
         0: "#1EC8FF",
         1: "#FF5555",
     })
-    referee_color_bgr: Tuple[int, int, int] = (40, 215, 255)  # Amber/Gold
+    referee_color_bgr: Tuple[int, int, int] = (21, 204, 250)  # Yellow #FACC15 in BGR
     ball_color_bgr: Tuple[int, int, int] = (60, 255, 130)     # Neon Mint
 
     def __post_init__(self) -> None:

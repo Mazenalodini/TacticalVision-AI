@@ -132,13 +132,44 @@ def stabilize_team_assignments(
     classifier: SigLIPTeamClassifier,
     player_id: int = 2,
     goalkeeper_id: int = 1,
+    referee_id: int = 3,
     max_crops_per_track: int = 12,
 ) -> Dict[int, int]:
+    # 1. Majority-vote track class across frames so single-frame noise
+    #    (e.g. a referee flagged as player once, or corner taker flagged as GK) never leaks.
+    cls_votes: Dict[int, Counter] = defaultdict(Counter)
+    for rec in frame_records:
+        for ent in rec["entities"]:
+            cls_votes[int(ent["track_id"])][int(ent["cls"])] += 1
+
+    referee_tids: set[int] = set()
+    goalkeeper_tids: set[int] = set()
+    for tid, cnt in cls_votes.items():
+        total = sum(cnt.values())
+        top_cls, _ = cnt.most_common(1)[0]
+        # Strict referee isolation: if classified as referee on plurality or >= 35% of frames
+        if top_cls == referee_id or (cnt[referee_id] / max(1, total)) >= 0.35:
+            referee_tids.add(tid)
+        elif top_cls == goalkeeper_id:
+            goalkeeper_tids.add(tid)
+
+    # Lock clean class IDs back onto every entity & collect jersey crops for outfield players only
     crops_by_tid: Dict[int, List[np.ndarray]] = defaultdict(list)
     for rec in frame_records:
         for ent in rec["entities"]:
-            if ent["cls"] == player_id and ent.get("crop") is not None:
-                crops_by_tid[int(ent["track_id"])].append(ent["crop"])
+            tid = int(ent["track_id"])
+            if tid in referee_tids:
+                ent["cls"] = referee_id
+                ent["team"] = -1
+                ent.pop("crop", None)
+                continue
+            if tid in goalkeeper_tids:
+                ent["cls"] = goalkeeper_id
+            elif int(ent["cls"]) == referee_id:
+                ent["cls"] = player_id
+
+            if int(ent["cls"]) == player_id and ent.get("crop") is not None:
+                crops_by_tid[tid].append(ent["crop"])
 
     batched_crops, batched_tids = [], []
     for tid, clist in crops_by_tid.items():
@@ -157,7 +188,11 @@ def stabilize_team_assignments(
         for tid, tm in zip(batched_tids, preds):
             votes[tid][int(tm)] += 1
 
-    track_to_team: Dict[int, int] = {tid: cnt.most_common(1)[0][0] for tid, cnt in votes.items()}
+    track_to_team: Dict[int, int] = {
+        tid: cnt.most_common(1)[0][0]
+        for tid, cnt in votes.items()
+        if tid not in referee_tids
+    }
 
     gk_positions: Dict[int, List[float]] = defaultdict(list)
     team_x_positions: Dict[int, List[float]] = defaultdict(list)
@@ -167,15 +202,19 @@ def stabilize_team_assignments(
             if px is None:
                 continue
             tid = int(ent["track_id"])
-            if ent["cls"] == player_id and tid in track_to_team:
+            if tid in referee_tids:
+                continue
+            if int(ent["cls"]) == player_id and tid in track_to_team:
                 team_x_positions[track_to_team[tid]].append(float(px[0]))
-            elif ent["cls"] == goalkeeper_id:
+            elif tid in goalkeeper_tids or int(ent["cls"]) == goalkeeper_id:
                 gk_positions[tid].append(float(px[0]))
 
     c0 = float(np.median(team_x_positions[0])) if team_x_positions[0] else 25.0
     c1 = float(np.median(team_x_positions[1])) if team_x_positions[1] else 80.0
 
     for gk_tid, xs in gk_positions.items():
+        if gk_tid in referee_tids:
+            continue
         gx = float(np.median(xs))
         track_to_team[gk_tid] = 0 if abs(gx - c0) <= abs(gx - c1) else 1
 
@@ -185,7 +224,10 @@ def stabilize_team_assignments(
     for rec in frame_records:
         for ent in rec["entities"]:
             tid = int(ent["track_id"])
-            ent["team"] = track_to_team.get(tid, -1)
+            if tid in referee_tids or int(ent["cls"]) == referee_id:
+                ent["team"] = -1
+            else:
+                ent["team"] = track_to_team.get(tid, -1)
             ent.pop("crop", None)
 
     return track_to_team

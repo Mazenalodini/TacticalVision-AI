@@ -32,7 +32,8 @@ class JobRunner:
         video_path: Path,
         title: str,
         mode: str = "cpu_quick",
-        max_seconds: float = 3.0,
+        max_seconds: float = 0.0,
+        start_seconds: float = 0.0,
         enable_jersey_ocr: bool = True,
     ) -> str:
         """Create and spawn an isolated worker subprocess."""
@@ -40,11 +41,16 @@ class JobRunner:
         match_id = f"user_{int(time.time())}_{uuid.uuid4().hex[:6]}"
         output_dir = settings.outputs_dir / match_id
 
-        # Clamp max_seconds for CPU quick-scan
-        clamped_seconds = max(
-            settings.cpu_quick_min_seconds,
-            min(max_seconds, settings.cpu_quick_max_seconds_limit),
-        )
+        # max_seconds=0 means "Full Video" (no truncation).
+        # Otherwise clamp within sane bounds for CPU processing.
+        if max_seconds <= 0:
+            clamped_seconds = 0.0  # Full video — no truncation
+        else:
+            clamped_seconds = max(
+                settings.cpu_quick_min_seconds,
+                min(max_seconds, settings.cpu_quick_max_seconds_limit),
+            )
+        clamped_start = max(0.0, float(start_seconds or 0.0))
 
         cmd = [
             sys.executable,
@@ -60,6 +66,8 @@ class JobRunner:
             title,
             "--max-seconds",
             str(clamped_seconds),
+            "--start-seconds",
+            str(clamped_start),
             "--mode",
             mode,
             "--enable-jersey-ocr" if enable_jersey_ocr else "--no-jersey-ocr",

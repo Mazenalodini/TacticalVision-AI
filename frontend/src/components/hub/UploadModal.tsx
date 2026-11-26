@@ -36,11 +36,12 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
   const router = useRouter();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
 
-  // Form state (default CPU quick-scan = 3s)
+  // Form state (default = Full Video without artificial 3s truncation)
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState<string>("");
   const [mode, setMode] = useState<"cpu_quick" | "remote_gpu">("cpu_quick");
-  const [duration, setDuration] = useState<number>(3.0);
+  const [duration, setDuration] = useState<number>(0);
+  const [startSeconds, setStartSeconds] = useState<number>(0);
   const [enableJerseyOcr, setEnableJerseyOcr] = useState<boolean>(true);
   const [remoteGpuUrl, setRemoteGpuUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -196,6 +197,7 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
     formData.append("title", title || file.name);
     formData.append("mode", mode);
     formData.append("max_seconds", duration.toString());
+    formData.append("start_seconds", Math.max(0, startSeconds || 0).toString());
     formData.append("enable_jersey_ocr", String(enableJerseyOcr));
     if (mode === "remote_gpu") {
       formData.append("remote_gpu_url", remoteGpuUrl.trim());
@@ -609,33 +611,63 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
 
                 {/* Mode-Specific Sub-Options */}
                 {mode === "cpu_quick" ? (
-                  <div className="space-y-2.5 p-4 rounded-xl obsidian-well">
+                  <div className="space-y-3 p-4 rounded-xl obsidian-well">
                     <label className="text-xs font-semibold text-slate-300 block">
                       {t("upload.duration_label")}
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[2.0, 3.0, 5.0].map((sec) => (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[0, 15, 30, 60].map((sec) => (
                         <button
                           key={`dur-${sec}`}
                           type="button"
                           onClick={() => setDuration(sec)}
-                          className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border ${
+                          className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 border ${
                             duration === sec
                               ? "editorial-tab-active border-tv-cyan/60 text-white shadow-sm"
                               : "bg-white/[0.04] text-slate-300 hover:text-white border-white/[0.06]"
                           }`}
                         >
-                          <span className="inline-flex items-baseline gap-0.5">
-                            <BidiNum>{sec}</BidiNum>
-                            <span>{t("seconds")}</span>
-                          </span>
-                          {sec === 3.0 && (
-                            <span className="text-[11px] text-tv-cyan">
-                              ({t("upload.rec_short")})
+                          {sec === 0 ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span>{t("upload.full_video")}</span>
+                              <span className="text-[10px] text-tv-cyan">
+                                ({t("upload.rec_short")})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-baseline gap-0.5">
+                              <BidiNum>{sec}</BidiNum>
+                              <span>{t("seconds")}</span>
                             </span>
                           )}
                         </button>
                       ))}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                      <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.08] text-xs text-slate-300">
+                        <span>{t("upload.start_sec_label")}</span>
+                        <input
+                          dir="ltr"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={startSeconds}
+                          onChange={(e) => setStartSeconds(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-20 px-2 py-1 rounded bg-slate-950/80 border border-white/10 text-end text-xs font-mono text-white focus:outline-none focus:border-tv-cyan"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.08] text-xs text-slate-300">
+                        <span>{t("upload.custom_dur_label")}</span>
+                        <input
+                          dir="ltr"
+                          type="number"
+                          min={0}
+                          step={5}
+                          value={duration}
+                          onChange={(e) => setDuration(Math.max(0, Number(e.target.value) || 0))}
+                          className="w-20 px-2 py-1 rounded bg-slate-950/80 border border-white/10 text-end text-xs font-mono text-white focus:outline-none focus:border-tv-cyan"
+                        />
+                      </label>
                     </div>
                     <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
                       {t("upload.cpu_hint")}

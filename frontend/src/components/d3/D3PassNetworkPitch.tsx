@@ -640,17 +640,19 @@ export function D3PassNetworkPitch({
                     strokeWidth={1}
                   />
                 )}
-                <text
-                  x={cx}
-                  y={cy + 3.5}
-                  textAnchor="middle"
-                  fill={identity.isVerified ? "#FFFFFF" : "rgba(226,232,240,0.8)"}
-                  fontSize={identity.isVerified ? "9.5" : "8.4"}
-                  fontFamily="monospace"
-                  fontWeight={identity.isVerified ? "bold" : "600"}
-                >
-                  {identity.canvasLabel}
-                </text>
+                {identity.canvasLabel && (
+                  <text
+                    x={cx}
+                    y={cy + 3.5}
+                    textAnchor="middle"
+                    fill="#FFFFFF"
+                    fontSize="9.5"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    {identity.canvasLabel}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -675,8 +677,14 @@ export function D3PassNetworkPitch({
             <div className="flex items-center justify-between gap-3 pb-1 border-b border-white/[0.08]">
               <span className="font-bold text-white">
                 {hoveredPlayer.identity.customName ||
-                  formatRole(hoveredPlayer.node.role, lang, true)}{" "}
-                <BidiNum>{hoveredPlayer.identity.badgeText}</BidiNum>
+                  (hoveredPlayer.identity.isVerified
+                    ? formatRole(hoveredPlayer.node.role, lang, true)
+                    : t("jersey.unidentified_player"))}{" "}
+                <BidiNum>
+                  {hoveredPlayer.identity.isVerified
+                    ? hoveredPlayer.identity.badgeText
+                    : `(#${hoveredPlayer.node.track_id})`}
+                </BidiNum>
               </span>
               <span
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -725,9 +733,13 @@ export function D3PassNetworkPitch({
               {`${activeReplayPass.time_s.toFixed(1)}s`}
             </BidiNum>
             <BidiNum className="font-bold text-white">
-              {`${resolvePlayerIdentity(activeReplayPass.from_id, null, overrides).badgeText} → ${
-                resolvePlayerIdentity(activeReplayPass.to_id, null, overrides).badgeText
-              }`}
+              {(() => {
+                const fId = resolvePlayerIdentity(activeReplayPass.from_id, null, overrides);
+                const tId = resolvePlayerIdentity(activeReplayPass.to_id, null, overrides);
+                const fLbl = fId.isVerified ? fId.badgeText : `#${activeReplayPass.from_id}`;
+                const tLbl = tId.isVerified ? tId.badgeText : `#${activeReplayPass.to_id}`;
+                return `${fLbl} → ${tLbl}`;
+              })()}
             </BidiNum>
             <BidiNum className="text-tv-cyan font-semibold">
               {`${activeReplayPass.distance_m}m`}

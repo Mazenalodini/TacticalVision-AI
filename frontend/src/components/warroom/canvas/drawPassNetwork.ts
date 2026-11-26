@@ -128,13 +128,15 @@ export function drawPassNetwork(
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      ctx.fillStyle = identity.isVerified ? "#FFFFFF" : "rgba(226,232,240,0.85)";
-      ctx.font = identity.isVerified
-        ? "bold 8.8px var(--font-jetbrains), monospace"
-        : "600 7.8px var(--font-jetbrains), monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(identity.canvasLabel, nx, ny);
+      if (identity.canvasLabel) {
+        ctx.fillStyle = identity.isVerified ? "#FFFFFF" : "rgba(226,232,240,0.85)";
+        ctx.font = identity.isVerified
+          ? "bold 8.8px var(--font-jetbrains), monospace"
+          : "600 7.8px var(--font-jetbrains), monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(identity.canvasLabel, nx, ny);
+      }
     }
     ctx.restore();
   }

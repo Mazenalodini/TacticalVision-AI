@@ -183,7 +183,11 @@ export function PlayerSpotlight({
                         : ""
                     }`}
                   >
-                    <BidiNum>{identity?.badgeText ?? `T${activeStat.track_id}`}</BidiNum>
+                    {identity?.isVerified ? (
+                      <BidiNum>{identity.badgeText}</BidiNum>
+                    ) : (
+                      <span className="text-[11px] font-semibold opacity-75">#?</span>
+                    )}
                     {identity?.isVerified && (
                       <span
                         className={`absolute -top-1.5 -end-1.5 w-4 h-4 rounded-full text-slate-950 flex items-center justify-center shadow ${
@@ -201,12 +205,19 @@ export function PlayerSpotlight({
                         {identity?.customName ? (
                           <>
                             <span>{identity.customName}</span>{" "}
-                            <BidiNum className="text-tv-cyan">{identity.badgeText}</BidiNum>
+                            {identity.isVerified && (
+                              <BidiNum className="text-tv-cyan">{identity.badgeText}</BidiNum>
+                            )}
+                          </>
+                        ) : identity?.isVerified ? (
+                          <>
+                            {formatRole(activeStat.role, lang)}{" "}
+                            <BidiNum>{identity.badgeText}</BidiNum>
                           </>
                         ) : (
                           <>
-                            {formatRole(activeStat.role, lang)}{" "}
-                            <BidiNum>{identity?.badgeText ?? `T${activeStat.track_id}`}</BidiNum>
+                            {t("jersey.unidentified_player")}{" "}
+                            <BidiNum className="text-slate-400 text-xs">{`(#${activeStat.track_id})`}</BidiNum>
                           </>
                         )}
                       </h3>

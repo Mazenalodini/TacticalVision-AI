@@ -97,6 +97,7 @@ export function stabilizeTelemetry(
   const isGlitchFrame = new Uint8Array(nFrames);
   let lastGoodMap = new Map<number, { x: number; y: number }>();
   let lastGoodFrameIdx = -1;
+  let consecutiveTeleports = 0;
   let glitchFrameCount = 0;
 
   for (let i = 0; i < nFrames; i++) {
@@ -116,6 +117,7 @@ export function stabilizeTelemetry(
       }
     }
 
+    const validInFrame = players.length - sentinelCount;
     const dtFrames = Math.max(1, i - lastGoodFrameIdx);
     const medDisp = medianOf(sharedDisps);
     const massTeleport =
@@ -123,7 +125,22 @@ export function stabilizeTelemetry(
       sharedDisps.length >= 4 &&
       medDisp > Math.max(2.6, dtFrames * 0.95);
 
-    if (sentinelCount >= 2 || massTeleport) {
+    // Only discard the whole frame when >= 55% of players hit sentinel OOB (never wipe corner-kick frames with valid players)
+    const severeSentinelGlitch =
+      players.length > 0 &&
+      validInFrame < 3 &&
+      sentinelCount >= Math.max(2, Math.ceil(players.length * 0.55));
+
+    if (massTeleport) {
+      consecutiveTeleports++;
+    } else {
+      consecutiveTeleports = 0;
+    }
+
+    // If a "teleport" persists >= 3 consecutive frames, it is a real camera pan/cut — re-anchor instead of dropping forever
+    const transientTeleport = massTeleport && consecutiveTeleports < 3;
+
+    if (severeSentinelGlitch || transientTeleport) {
       isGlitchFrame[i] = 1;
       glitchFrameCount++;
     } else if (players.length > 0) {
@@ -138,6 +155,13 @@ export function stabilizeTelemetry(
         lastGoodFrameIdx = i;
       }
     }
+  }
+
+  // Fallback safeguard: if strict frame-level glitch filter would leave >= 80% of clip blank,
+  // retain frames and rely on per-player OOB filtering so valid tracks always render on radar.
+  if (nFrames > 0 && glitchFrameCount >= Math.ceil(nFrames * 0.8)) {
+    isGlitchFrame.fill(0);
+    glitchFrameCount = 0;
   }
 
   // ── 2. Per-Track Kinematic Outlier Rejection, Glitch Bridging & 5-Tap Gaussian Smoothing ──

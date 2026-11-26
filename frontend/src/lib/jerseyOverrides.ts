@@ -151,7 +151,7 @@ export function resolvePlayerIdentity(
 
   return {
     badgeText: `T${trackId}`,
-    canvasLabel: `T${trackId}`,
+    canvasLabel: "",
     isVerified: false,
     isCoachOverride: Boolean(customName),
     jerseyNumber: null,

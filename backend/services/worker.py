@@ -204,7 +204,8 @@ def main() -> int:
     parser.add_argument("--video", required=True, help="Path to input video file")
     parser.add_argument("--output-dir", required=True, help="Target match directory in outputs/")
     parser.add_argument("--title", default="User Uploaded Match", help="Match display title")
-    parser.add_argument("--max-seconds", type=float, default=5.0, help="Maximum clip duration to analyze")
+    parser.add_argument("--max-seconds", type=float, default=0.0, help="Maximum clip duration to analyze (0 = full video)")
+    parser.add_argument("--start-seconds", type=float, default=0.0, help="Optional clip start timestamp in seconds")
     parser.add_argument("--mode", default="cpu_quick", help="Analysis mode (cpu_quick | remote_gpu)")
     parser.add_argument(
         "--enable-jersey-ocr",
@@ -289,9 +290,11 @@ def main() -> int:
 
         # Optimize inference resolution for local CPU quick-scan (~4x faster on CPU)
         # while keeping full 1280px / 640px precision for remote_gpu or CUDA devices.
+        # NOTE: pitch_imgsz MUST stay 640 always — 512 produces too few keypoints
+        # for valid homography on zoomed broadcast angles (confirmed on Serie A clips).
         use_cpu_fast = args.mode == "cpu_quick" and not torch.cuda.is_available()
         det_imgsz = 640 if use_cpu_fast else 1280
-        pitch_imgsz = 512 if use_cpu_fast else 640
+        pitch_imgsz = 640  # Never degrade — 512px kills homography on tight angles
         orig_stdout.write(
             f"[Worker] Mode={args.mode} | CUDA={torch.cuda.is_available()} | "
             f"det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz} | jersey_ocr={args.enable_jersey_ocr}\n"
@@ -315,6 +318,7 @@ def main() -> int:
             video_path=str(video_path),
             output_dir=str(output_dir),
             max_seconds=args.max_seconds,
+            start_seconds=args.start_seconds,
         )
 
         # Write metadata file in output_dir

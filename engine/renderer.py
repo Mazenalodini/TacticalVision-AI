@@ -110,19 +110,25 @@ class BroadcastRenderer:
                 lineType=cv2.LINE_AA,
             )
 
-            # Honest Identity Badge: `#jn` (verified) vs `T{tid}` (unverified ByteTrack fallback)
-            jn = ent.get("jersey_number")
-            jv = bool(ent.get("jersey_verified", False))
-            is_verified = jv and jn is not None
-            badge_text = f"#{jn}" if is_verified else f"T{tid}"
-            badge_border = (130, 230, 120) if is_verified else (115, 130, 148)
-            (tw, th), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
-            bx1, by1 = cx - tw // 2 - 4, y2 + 5
-            bx2, by2 = cx + tw // 2 + 4, y2 + th + 10
-            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (18, 22, 28), -1)
-            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), badge_border, 1)
-            cv2.putText(canvas, badge_text, (bx1 + 4, by2 - 3),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 245), 1, cv2.LINE_AA)
+            # Identity Badge: verified `#jn` only — referees and unverified players get NO text
+            if cls_id == self.cfg.referee_id:
+                # Referees: yellow ellipse only, zero identity text
+                pass
+            else:
+                jn = ent.get("jersey_number")
+                jv = bool(ent.get("jersey_verified", False))
+                is_verified = jv and jn is not None
+                if is_verified:
+                    badge_text = f"#{jn}"
+                    badge_border = (130, 230, 120)
+                    (tw, th), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+                    bx1, by1 = cx - tw // 2 - 4, y2 + 5
+                    bx2, by2 = cx + tw // 2 + 4, y2 + th + 10
+                    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (18, 22, 28), -1)
+                    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), badge_border, 1)
+                    cv2.putText(canvas, badge_text, (bx1 + 4, by2 - 3),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 245), 1, cv2.LINE_AA)
+                # Unverified players: clean ellipse only, no fake T# clutter
 
             spd = ent.get("speed_kmh", 0.0)
             if spd >= 14.0 and cls_id != self.cfg.referee_id:
@@ -217,6 +223,7 @@ class BroadcastRenderer:
             cls_id = int(ent["cls"])
             tm = int(ent.get("team", -1))
             if cls_id == self.cfg.referee_id:
+                # Referee: small yellow dot, zero number text
                 cv2.circle(radar, (rx, ry), 6, self.cfg.referee_color_bgr, -1, cv2.LINE_AA)
             else:
                 col = self.cfg.team_colors_bgr.get(tm, (200, 200, 200))
@@ -225,9 +232,11 @@ class BroadcastRenderer:
                 cv2.circle(radar, (rx, ry), radius, (15, 20, 25), 2, cv2.LINE_AA)
                 jn = ent.get("jersey_number")
                 jv = bool(ent.get("jersey_verified", False))
-                lbl = f"#{jn}" if (jv and jn is not None) else f"T{ent['track_id']}"
-                cv2.putText(radar, lbl, (rx - 7, ry + 4),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
+                # Only display verified jersey numbers — no fake T# text
+                if jv and jn is not None:
+                    lbl = f"#{jn}"
+                    cv2.putText(radar, lbl, (rx - 7, ry + 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
 
         # 5. Ball Position & Trail
         bp = rec.get("ball_pitch_xy")

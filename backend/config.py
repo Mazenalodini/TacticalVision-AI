@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     tmp_uploads_dir: Path = Path(__file__).resolve().parent / "tmp_uploads"
 
     # Upload / Inference settings (CPU Quick-Scan)
-    cpu_quick_max_seconds: float = 3.0
+    # max_seconds=0 means "Full Video" (no truncation)
+    cpu_quick_max_seconds: float = 0.0
     cpu_quick_min_seconds: float = 2.0
-    cpu_quick_max_seconds_limit: float = 15.0
-    subprocess_timeout_s: int = 900
+    cpu_quick_max_seconds_limit: float = 600.0
+    subprocess_timeout_s: int = 3600
 
     # Remote GPU worker (optional — empty string = disabled)
     remote_gpu_worker_url: str = ""

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry } from "@/lib/types";
-import { usePlayerOverrides } from "@/lib/jerseyOverrides";
+import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
+import { BidiNum } from "@/components/ui/BidiNum";
 import {
   stabilizeTelemetry,
   interpolateStabilizedFrame,
@@ -54,6 +55,17 @@ export function PitchCanvas({
   const viewportRef = useRef<PitchViewport | null>(null);
   const lastInterpRef = useRef<StabilizedFrame | null>(null);
   const lastNotifiedKeyRef = useRef<string>("");
+  const hoveredIdRef = useRef<number | null>(null);
+  const [hoveredInfo, setHoveredInfo] = useState<{
+    id: number;
+    team: 0 | 1;
+    role: "p" | "gk" | "referee";
+    spd: number;
+    jn?: number | null;
+    jv?: boolean | null;
+    pxX: number;
+    pxY: number;
+  } | null>(null);
 
   // Stabilize raw tracker & homography signal once per telemetry load
   const stabilized = useMemo(() => stabilizeTelemetry(telemetry), [telemetry]);
@@ -161,7 +173,7 @@ export function PitchCanvas({
               trajectory,
               interpFrame.f,
               vp,
-              null,
+              hoveredIdRef.current,
               overrides
             );
           }
@@ -259,6 +271,56 @@ export function PitchCanvas({
     [selectedPlayerId, onSelectPlayer]
   );
 
+  const handleCanvasMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      const vp = viewportRef.current;
+      const currentFrame = lastInterpRef.current;
+      if (!canvas || !vp || !currentFrame || !currentFrame.players) {
+        hoveredIdRef.current = null;
+        setHoveredInfo(null);
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const pxX = e.clientX - rect.left;
+      const pxY = e.clientY - rect.top;
+      const [mx, my] = canvasToPitch(pxX, pxY, vp);
+
+      let closest = null as (typeof currentFrame.players)[number] | null;
+      let minDistance = 3.2;
+      for (const p of currentFrame.players) {
+        if (p.role === "referee") continue;
+        const dist = Math.hypot(p.x - mx, p.y - my);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closest = p;
+        }
+      }
+      if (closest) {
+        hoveredIdRef.current = closest.id;
+        setHoveredInfo({
+          id: closest.id,
+          team: closest.team,
+          role: closest.role,
+          spd: closest.spd,
+          jn: closest.jn,
+          jv: closest.jv,
+          pxX,
+          pxY,
+        });
+      } else if (hoveredIdRef.current !== null) {
+        hoveredIdRef.current = null;
+        setHoveredInfo(null);
+      }
+    },
+    []
+  );
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    hoveredIdRef.current = null;
+    setHoveredInfo(null);
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -267,8 +329,45 @@ export function PitchCanvas({
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
+        onMouseMove={handleCanvasMouseMove}
+        onMouseLeave={handleCanvasMouseLeave}
         className="block w-full h-full"
       />
+
+      {hoveredInfo && (() => {
+        const hid = resolvePlayerIdentity(hoveredInfo.id, hoveredInfo, overrides);
+        return (
+          <div
+            style={{
+              left: Math.min(Math.max(8, hoveredInfo.pxX + 12), 420),
+              top: Math.max(8, hoveredInfo.pxY - 46),
+            }}
+            className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-lg bg-slate-950/95 border border-white/15 shadow-xl text-[11px] whitespace-nowrap"
+          >
+            <div className="flex items-center gap-1.5 font-bold text-white">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  hoveredInfo.team === 0 ? "bg-tv-cyan" : "bg-tv-coral"
+                }`}
+              />
+              {hid.isVerified ? (
+                <span>
+                  {hid.customName ? `${hid.customName} ` : ""}
+                  <BidiNum className="text-tv-mint">{hid.badgeText}</BidiNum>
+                </span>
+              ) : (
+                <span className="text-slate-200">
+                  {t("jersey.unidentified_player")}{" "}
+                  <BidiNum className="text-slate-400">{`(#${hoveredInfo.id})`}</BidiNum>
+                </span>
+              )}
+              <BidiNum className="text-slate-400 font-mono ms-1">
+                {`${hoveredInfo.spd.toFixed(1)} km/h`}
+              </BidiNum>
+            </div>
+          </div>
+        );
+      })()}
 
       {selectedPlayerId === null && (
         <div className="absolute bottom-2 start-2.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] text-slate-300 bg-black/70 backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">

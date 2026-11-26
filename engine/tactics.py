@@ -301,17 +301,35 @@ class TacticalAnalyticsEngine:
             self.cfg.goalkeeper_id: "goalkeeper",
             self.cfg.referee_id: "referee",
         }
+        cls_votes: Dict[int, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
 
         for f_idx, rec in enumerate(frame_records):
             for ent in rec["entities"]:
+                tid = int(ent["track_id"])
+                cls_votes[tid][int(ent["cls"])] += 1
                 if ent.get("pitch_xy") is None:
                     continue
-                tid = int(ent["track_id"])
                 track_frames[tid].append(f_idx)
                 track_coords[tid].append(np.array(ent["pitch_xy"], dtype=np.float32))
                 if ent.get("team", -1) in (0, 1):
                     track_team[tid] = int(ent["team"])
-                track_role[tid] = role_names.get(int(ent["cls"]), "player")
+
+        for tid, cnt_map in cls_votes.items():
+            total_c = max(1, sum(cnt_map.values()))
+            if cnt_map.get(self.cfg.referee_id, 0) / total_c >= 0.35:
+                track_role[tid] = "referee"
+                track_team.pop(tid, None)
+            else:
+                best_cls = max(cnt_map.items(), key=lambda kv: kv[1])[0]
+                track_role[tid] = role_names.get(best_cls, "player")
+
+        # Ensure referee tracks always carry team=-1 and cls=referee_id across every frame
+        for rec in frame_records:
+            for ent in rec["entities"]:
+                tid = int(ent["track_id"])
+                if track_role.get(tid) == "referee":
+                    ent["cls"] = self.cfg.referee_id
+                    ent["team"] = -1
 
         # 2. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & Sprints
         pos_win = max(1, int(self.cfg.position_moving_avg_window))
@@ -372,15 +390,16 @@ class TacticalAnalyticsEngine:
                     sprint_streak += 1
                     if not in_sprint and sprint_streak >= max(3, int(self.fps * 0.4)):
                         in_sprint = True
-                        sprint_count += 1
-                        sprint_events.append({
-                            "type": "sprint",
-                            "frame": int(f_list[k]),
-                            "time_s": round(f_list[k] / self.fps, 2),
-                            "track_id": tid,
-                            "team": track_team.get(tid, -1),
-                            "speed_kmh": round(spd_kmh, 1),
-                        })
+                        if track_role.get(tid) != "referee" and tid in track_team:
+                            sprint_count += 1
+                            sprint_events.append({
+                                "type": "sprint",
+                                "frame": int(f_list[k]),
+                                "time_s": round(f_list[k] / self.fps, 2),
+                                "track_id": tid,
+                                "team": track_team.get(tid, -1),
+                                "speed_kmh": round(spd_kmh, 1),
+                            })
                 else:
                     sprint_streak = 0
                     in_sprint = False
@@ -388,25 +407,26 @@ class TacticalAnalyticsEngine:
             for f_i, sp in zip(f_list, speeds):
                 speed_lookup[(f_i, tid)] = round(float(sp), 1)
 
-            if track_role.get(tid) in ("player", "goalkeeper") and tid in track_team:
-                jinfo = jersey_map.get(tid, {})
-                player_stats[tid] = {
-                    "track_id": tid,
-                    "team": track_team[tid],
-                    "role": track_role[tid],
-                    "distance_m": round(total_dist, 1),
-                    "max_speed_kmh": round(max_speed, 1),
-                    "avg_speed_kmh": round(float(np.mean(speeds)), 1),
-                    "sprints": sprint_count,
-                    "passes_completed": 0,
-                    "xt_generated": 0.0,
-                    "avg_pitch_xy": [round(float(np.mean(smooth_pts[:, 0])), 2), round(float(np.mean(smooth_pts[:, 1])), 2)],
-                    "frames_visible": len(f_list),
-                    "jersey_number": jinfo.get("jersey_number"),
-                    "jersey_confidence": jinfo.get("jersey_confidence"),
-                    "jersey_verified": bool(jinfo.get("jersey_verified", False)),
-                    "legibility_score": jinfo.get("legibility_score"),
-                }
+            if track_role.get(tid) == "referee" or track_role.get(tid) not in ("player", "goalkeeper") or tid not in track_team:
+                continue
+            jinfo = jersey_map.get(tid, {})
+            player_stats[tid] = {
+                "track_id": tid,
+                "team": track_team[tid],
+                "role": track_role[tid],
+                "distance_m": round(total_dist, 1),
+                "max_speed_kmh": round(max_speed, 1),
+                "avg_speed_kmh": round(float(np.mean(speeds)), 1),
+                "sprints": sprint_count,
+                "passes_completed": 0,
+                "xt_generated": 0.0,
+                "avg_pitch_xy": [round(float(np.mean(smooth_pts[:, 0])), 2), round(float(np.mean(smooth_pts[:, 1])), 2)],
+                "frames_visible": len(f_list),
+                "jersey_number": jinfo.get("jersey_number"),
+                "jersey_confidence": jinfo.get("jersey_confidence"),
+                "jersey_verified": bool(jinfo.get("jersey_verified", False)),
+                "legibility_score": jinfo.get("legibility_score"),
+            }
 
         # 3. Possession, Passes & Turnovers (bridged ball + asymmetric hysteresis state machine)
         voronoi_history = {0: [], 1: [], "def": [], "mid": [], "att": []}

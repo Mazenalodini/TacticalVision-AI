@@ -479,7 +479,7 @@ export function PlayerLeaderboard({
                                     identity.isCoachOverride
                                       ? t("jersey.coach_override")
                                       : t("jersey.verified")
-                                  } · ${t("jersey.track_fallback")} T${p.track_id}${
+                                  } · ${t("jersey.track_fallback")} #${p.track_id}${
                                     p.jersey_confidence != null
                                       ? ` · ${Math.round(p.jersey_confidence * 100)}%`
                                       : ""
@@ -508,12 +508,13 @@ export function PlayerLeaderboard({
                                   </span>
                                 )}
                                 <BidiNum className="text-[10px] text-slate-500 font-normal">
-                                  {`T${p.track_id}`}
+                                  {`#${p.track_id}`}
                                 </BidiNum>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-slate-400 font-semibold">
-                                <BidiNum>{`T${p.track_id}`}</BidiNum>
+                                <span>{t("jersey.track_short")}</span>{" "}
+                                <BidiNum>{`#${p.track_id}`}</BidiNum>
                                 {identity.customName && (
                                   <span className="text-[11px] text-slate-200 font-semibold">
                                     {identity.customName}

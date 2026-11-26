@@ -48,8 +48,10 @@ export function EventTimeline({
     for (const p of players) m.set(p.track_id, p);
     return m;
   }, [players]);
-  const playerLabel = (tid: number) =>
-    resolvePlayerIdentity(tid, statMap.get(tid) ?? null, overrides).badgeText;
+  const playerLabel = (tid: number) => {
+    const id = resolvePlayerIdentity(tid, statMap.get(tid) ?? null, overrides);
+    return id.isVerified ? id.badgeText : `#${tid}`;
+  };
   const [filterType, setFilterType] = useState<EventFilterType>("all");
   const [hoveredEvent, setHoveredEvent] = useState<{
     kind: "spatial";
