@@ -99,12 +99,16 @@ def extract_possession_and_passes(
     fps: float,
     cfg: EngineConfig,
     pitch: FIFAPitchConfig,
+    frames_image_fallback: Optional[List[Tuple[Optional[np.ndarray], List[Tuple[int, int, np.ndarray]]]]] = None,
 ) -> Dict[str, Any]:
     """
     Possession + pass + turnover state machine with asymmetric hysteresis.
 
     frames_players: per-frame list of (track_id, team, x_m, y_m) for players/goalkeepers.
     ball_xy: per-frame ball pitch position (already bridged) or None.
+    frames_image_fallback: optional per-frame `(ball_px, [(tid, team, box_xyxy), ...])`
+      used strictly for possession continuity on frames where the ball is visibly detected
+      in image space while pitch calibration is briefly unavailable/recovering.
 
     - Same-team reception confirms after `min_owner_frames`.
     - Opponent takeover requires `min_turnover_frames` (or 3 frames within 1.6m for a clean
@@ -134,7 +138,30 @@ def extract_possession_and_passes(
     for f_idx, players in enumerate(frames_players):
         bp = ball_xy[f_idx] if f_idx < len(ball_xy) else None
         if bp is None or not players:
-            owner_team_per_frame.append(-1)
+            # Image-space possession fallback: if ball & players are clearly visible in pixels
+            # during a brief calibration gap, credit possession to the nearest player's feet
+            # (within 0.90 * player box height) without fabricating metric passes.
+            fb_owner = -1
+            if frames_image_fallback is not None and f_idx < len(frames_image_fallback):
+                b_px, px_players = frames_image_fallback[f_idx]
+                if b_px is not None and px_players:
+                    bx, by = float(b_px[0]), float(b_px[1])
+                    best_norm_d = 1e9
+                    for _tid, tm, box in px_players:
+                        if tm not in (0, 1):
+                            continue
+                        fx = 0.5 * (float(box[0]) + float(box[2]))
+                        fy = float(box[3])
+                        bh = max(20.0, float(box[3]) - float(box[1]))
+                        nd = float(np.hypot(fx - bx, fy - by)) / bh
+                        if nd < best_norm_d:
+                            best_norm_d = nd
+                            fb_owner = int(tm)
+                    if best_norm_d <= 0.95 and fb_owner in (0, 1):
+                        possession_frames[fb_owner] += 1
+                    else:
+                        fb_owner = -1
+            owner_team_per_frame.append(fb_owner)
             continue
         bp = np.asarray(bp, dtype=np.float32)
 
@@ -521,18 +548,28 @@ class TacticalAnalyticsEngine:
         hull_areas = {0: [], 1: []}
 
         frames_players_pos: List[List[Tuple[int, int, float, float]]] = []
+        frames_image_fallback: List[Tuple[Optional[np.ndarray], List[Tuple[int, int, np.ndarray]]]] = []
         raw_ball_pitch: List[Optional[np.ndarray]] = []
         for rec in frame_records:
             fp_list = []
+            px_list = []
             for ent in rec["entities"]:
                 px = ent.get("pitch_xy")
                 tm = int(ent.get("team", -1))
-                if px is None or tm not in (0, 1):
+                if tm not in (0, 1):
                     continue
                 if ent["cls"] not in (self.cfg.player_id, self.cfg.goalkeeper_id):
                     continue
-                fp_list.append((int(ent["track_id"]), tm, float(px[0]), float(px[1])))
+                box = ent.get("box")
+                if box is not None:
+                    px_list.append((int(ent["track_id"]), tm, np.asarray(box, dtype=np.float32)))
+                if px is not None:
+                    fp_list.append((int(ent["track_id"]), tm, float(px[0]), float(px[1])))
             frames_players_pos.append(fp_list)
+            b_img = rec.get("ball_xy")
+            frames_image_fallback.append(
+                (None if b_img is None else np.asarray(b_img, dtype=np.float32), px_list)
+            )
             bpx = rec.get("ball_pitch_xy")
             raw_ball_pitch.append(None if bpx is None else np.asarray(bpx, dtype=np.float32))
 
@@ -545,7 +582,12 @@ class TacticalAnalyticsEngine:
             pitch_width=self.pitch.width,
         )
         poss_res = extract_possession_and_passes(
-            frames_players_pos, bridged_ball, self.fps, self.cfg, self.pitch
+            frames_players_pos,
+            bridged_ball,
+            self.fps,
+            self.cfg,
+            self.pitch,
+            frames_image_fallback=frames_image_fallback,
         )
         possession_frames = poss_res["possession_frames"]
         owner_team_per_frame = poss_res["owner_team_per_frame"]
@@ -659,9 +701,16 @@ class TacticalAnalyticsEngine:
             rec["ball_owner_team"] = ball_owner_team
 
             tot_pos_so_far = cum_poss[0] + cum_poss[1]
+            # Require >= 5 possession frames before leaving neutral 50/50 on broadcast HUD
+            # so a single initial touch does not flash 0.0% | 100.0% on the opening seconds.
+            if tot_pos_so_far >= 5:
+                hud_pos_0 = round(100.0 * cum_poss[0] / float(tot_pos_so_far), 1)
+                hud_pos_1 = round(100.0 - hud_pos_0, 1)
+            else:
+                hud_pos_0, hud_pos_1 = 50.0, 50.0
             rec["hud_stats"] = {
-                "pos_0": round(100.0 * cum_poss[0] / max(1, tot_pos_so_far), 1) if tot_pos_so_far else 50.0,
-                "pos_1": round(100.0 * cum_poss[1] / max(1, tot_pos_so_far), 1) if tot_pos_so_far else 50.0,
+                "pos_0": hud_pos_0,
+                "pos_1": hud_pos_1,
                 "ctrl_0": vor_metrics["team_0_pct"],
                 "ctrl_1": vor_metrics["team_1_pct"],
                 "passes_0": int(cum_pass[0][f_idx]),

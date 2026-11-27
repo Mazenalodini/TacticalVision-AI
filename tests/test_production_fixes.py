@@ -532,3 +532,189 @@ def test_cielab_torso_classifier_white_vs_navy_purity():
     assert white_teams != navy_teams, f"White and Navy merged into same team: {tmap}"
 
 
+def test_tactical_quality_gate_and_universal_striped_and_similar_kits():
+    """SOTA Rebuild Phase 2: Tactical gate rejects close-ups/occlusions; universal classifier separates solid, striped, and similar kits."""
+    from engine.team_classifier import is_valid_tactical_box
+
+    # Tactical player box quality gate (1280x720)
+    assert is_valid_tactical_box(np.array([400, 260, 442, 355]), 720, 1280, max_iou=0.0) is True   # h/H=0.132
+    assert is_valid_tactical_box(np.array([400, 100, 580, 460]), 720, 1280, max_iou=0.0) is False  # close-up h/H=0.50
+    assert is_valid_tactical_box(np.array([400, 260, 412, 280]), 720, 1280, max_iou=0.0) is False  # tiny h/H=0.028
+    assert is_valid_tactical_box(np.array([400, 10, 440, 100]), 720, 1280, max_iou=0.0) is False   # top HUD zone
+    assert is_valid_tactical_box(np.array([400, 260, 442, 355]), 720, 1280, max_iou=0.22) is False # occluded IoU >= 0.15
+
+    # Scenario A: Striped Red/White vs Solid Blue + contaminated outlier coach crop
+    clf = SigLIPTeamClassifier(enable_siglip=False)
+    striped_crops = []
+    blue_crops = []
+    for _ in range(14):
+        c_stripe = np.full((36, 28, 3), (235, 235, 235), dtype=np.uint8)
+        c_stripe[:, ::6] = (30, 30, 210)
+        c_stripe[:, 1::6] = (30, 30, 210)
+        c_stripe[:, 2::6] = (30, 30, 210)
+        striped_crops.append(c_stripe)
+        blue_crops.append(np.full((36, 28, 3), (200, 75, 25), dtype=np.uint8))
+    outliers = [np.full((36, 28, 3), (25, 25, 25), dtype=np.uint8) for _ in range(3)]  # coaches
+    clf.fit(striped_crops + blue_crops + outliers)
+    assert clf.fitted is True
+    assert clf.cluster_delta_e >= 16.0
+    assert clf.mode_used == "cielab_universal_primary"
+    hexes = clf.get_kit_colors_hex()
+    assert hexes["team_a_kit_hex"].startswith("#") and len(hexes["team_a_kit_hex"]) == 7
+    assert hexes["team_b_kit_hex"].startswith("#") and len(hexes["team_b_kit_hex"]) == 7
+    p_stripe = clf.predict(striped_crops)
+    p_blue = clf.predict(blue_crops)
+    assert len(set(p_stripe.tolist())) == 1
+    assert len(set(p_blue.tolist())) == 1
+    assert p_stripe[0] != p_blue[0]
+
+    # Scenario B: Truly near-identical low-contrast kits (ΔE_Lab < 16) activates secondary HSV cue fusion
+    clf_sim = SigLIPTeamClassifier(enable_siglip=True)
+    kit_a = [np.full((36, 28, 3), (176, 170, 162), dtype=np.uint8) for _ in range(12)]  # cool mist grey
+    kit_b = [np.full((36, 28, 3), (162, 174, 178), dtype=np.uint8) for _ in range(12)]  # warm pearl grey
+    clf_sim.fit(kit_a + kit_b)
+    assert clf_sim.fitted is True
+    assert clf_sim.cluster_delta_e < 16.0
+    assert clf_sim.mode_used == "cielab_plus_hsv_cue_fusion"
+    assert set(clf_sim.predict(kit_a).tolist()) != set(clf_sim.predict(kit_b).tolist())
+
+
+def test_possession_integrity_with_image_space_fallback_and_hud_warmup():
+    """SOTA Rebuild Phase 2: Possession uses image-space fallback during calibration gaps and avoids 1-frame 0/100 HUD spikes."""
+    cfg = EngineConfig(players_model_path="", pitch_model_path="", enable_siglip=False, enable_jersey_ocr=False)
+    pitch = FIFAPitchConfig()
+    eng = TacticalAnalyticsEngine(cfg, pitch, fps=15.0)
+    H_id = np.eye(3, dtype=np.float32)
+
+    # 30 frames: frames 0..14 Team 0 holds ball on metric pitch; frames 15..29 H is temporarily None
+    # while Team 1 holds the ball cleanly at their feet in image space!
+    frame_records = []
+    for f in range(30):
+        t0_has = f < 15
+        h_valid = f < 15
+        frame_records.append({
+            "frame_idx": f,
+            "H": H_id if h_valid else None,
+            "H_inv": H_id if h_valid else None,
+            "homography_valid": h_valid,
+            "homography_reset": False,
+            "ball_detected": True,
+            "ball_xy": np.array([220.0, 380.0], np.float32) if t0_has else np.array([620.0, 380.0], np.float32),
+            "ball_pitch_xy": np.array([30.0, 34.0], np.float32) if h_valid else None,
+            "entities": [
+                {
+                    "track_id": 1, "cls": cfg.player_id, "team": 0, "conf": 0.9,
+                    "box": np.array([200.0, 290.0, 240.0, 380.0], np.float32),
+                    "pitch_xy": np.array([30.5, 34.0], np.float32) if h_valid else None,
+                },
+                {
+                    "track_id": 2, "cls": cfg.player_id, "team": 1, "conf": 0.9,
+                    "box": np.array([600.0, 290.0, 640.0, 380.0], np.float32),
+                    "pitch_xy": np.array([70.0, 34.0], np.float32) if h_valid else None,
+                },
+            ],
+        })
+
+    tel = eng.analyze(frame_records)
+    poss = tel["summary"]["possession_pct"]
+    assert 40.0 <= poss["team_0"] <= 60.0, f"Possession collapsed despite balanced touches: {poss}"
+    assert 40.0 <= poss["team_1"] <= 60.0
+    # HUD warm-up keeps opening frames neutral 50/50 until >= 5 touches
+    assert frame_records[0]["hud_stats"]["pos_0"] == 50.0
+
+
+def test_pnlcalib_3d_projection_pose_gates_and_fallback_health():
+    """SOTA Rebuild Phase 3: PnLCalib 3D -> FIFA projection is exact, rejects bad poses, and exposes /health backend."""
+    from fastapi.testclient import TestClient
+    from engine.pnlcalib_calibrator import PnLCalib3DCalibrator, cam_params_to_fifa_homography
+    from gpu_worker.server import app as gpu_app
+
+    pitch = FIFAPitchConfig()
+
+    # Construct a physically valid 3D broadcast camera looking at right penalty box (X_pnl=+35, Y_pnl=0, Z=0)
+    # Camera positioned at main stand: (X_pnl=10, Y_pnl=52, Z_pnl=-20) looking toward (35, 0, 0)
+    cam_pos = np.array([10.0, 52.0, -20.0], dtype=np.float64)
+    target = np.array([35.0, 0.0, 0.0], dtype=np.float64)
+    z_axis = target - cam_pos
+    z_axis /= np.linalg.norm(z_axis)
+    world_down = np.array([0.0, 0.0, 1.0], dtype=np.float64)  # PnLCalib Z is down
+    x_axis = np.cross(world_down, z_axis)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(z_axis, x_axis)
+    R = np.stack([x_axis, y_axis, z_axis], axis=0)
+
+    fx = fy = 1400.0
+    pp = np.array([640.0, 360.0], dtype=np.float64)
+    params = {
+        "cam_params": {
+            "x_focal_length": fx,
+            "y_focal_length": fy,
+            "principal_point": pp.tolist(),
+            "position_meters": cam_pos.tolist(),
+            "rotation_matrix": R.tolist(),
+        }
+    }
+
+    res = cam_params_to_fifa_homography(params, pitch)
+    assert res is not None
+    H_fifa, pose = res
+    assert pose["fx"] == 1400.0
+
+    # Project FIFA right penalty spot (94, 34) -> centered (41.5, 0, 0) -> image -> back via H_fifa
+    It = np.eye(4, dtype=np.float64)[:-1]
+    It[:, -1] = -cam_pos
+    Q = np.array([[fx, 0.0, pp[0]], [0.0, fy, pp[1]], [0.0, 0.0, 1.0]], dtype=np.float64)
+    P = Q @ (R @ It)
+    uv_h = P @ np.array([94.0 - 52.5, 34.0 - 34.0, 0.0, 1.0])
+    uv = (uv_h[:2] / uv_h[2]).astype(np.float32).reshape(1, 1, 2)
+    recovered = cv2.perspectiveTransform(uv, H_fifa).reshape(2)
+    err_m = float(np.linalg.norm(recovered - np.array([94.0, 34.0])))
+    assert err_m < 0.05, f"PnLCalib 3D -> FIFA projection error too large: {err_m:.4f}m"
+
+    # Reject physically implausible camera poses (underground camera / crazy focal length)
+    bad_params = {"cam_params": {**params["cam_params"], "position_meters": [0.0, 50.0, -0.2]}}
+    assert cam_params_to_fifa_homography(bad_params, pitch) is None
+    bad_focal = {"cam_params": {**params["cam_params"], "x_focal_length": 25.0}}
+    assert cam_params_to_fifa_homography(bad_focal, pitch) is None
+
+    # Fallback contract + GPU worker /health exposes calibrator_backend & pnlcalib_ready
+    stab = StabilizedHomography(pitch)
+    cal = PnLCalib3DCalibrator(pitch, stab, force_fallback=True)
+    assert cal.backend == "yolo_pitch_fallback"
+    assert cal.is_pnlcalib_active is False
+
+    client = TestClient(gpu_app)
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["calibrator_backend"] in ("pnlcalib_3d", "yolo_pitch_fallback")
+    assert isinstance(body["pnlcalib_ready"], bool)
+
+
+def test_homography_law2_blocks_right_box_midfield_mislabel_even_with_many_inliers():
+    """SOTA Rebuild Phase 3: Law 2 blocks shifted right-box->left-half mislabel regardless of inlier count."""
+    pitch = FIFAPitchConfig()
+    hom = StabilizedHomography(pitch, temporal_hold_frames=10)
+
+    # 9 keypoints of LEFT penalty box (x in [0..16.5]) falsely placed on the FAR RIGHT of the image (u in 780..1180)
+    # with open pitch players on the left (u in 120..420) — even though dX/du > 0 and 9 inliers!
+    left_box_ids = [0, 1, 2, 3, 4, 6, 7, 9, 12]
+    dst_l = pitch.vertices[left_box_ids]
+    src_right_img = np.column_stack([
+        780.0 + dst_l[:, 0] * (400.0 / 16.5),
+        180.0 + dst_l[:, 1] * (400.0 / 68.0),
+    ]).astype(np.float32)
+    kpts = np.zeros((32, 2), dtype=np.float32)
+    conf = np.zeros((32,), dtype=np.float32)
+    kpts[left_box_ids] = src_right_img
+    conf[left_box_ids] = 0.90
+
+    # Players spread across open pitch to the left of the box
+    players = np.array([
+        [150.0, 350.0], [280.0, 380.0], [420.0, 410.0], [820.0, 340.0], [920.0, 390.0],
+    ], dtype=np.float32)
+    assert hom.update(kpts, conf, player_feet_px=players, img_width=1280) is False
+    assert hom.H is None
+
+
+

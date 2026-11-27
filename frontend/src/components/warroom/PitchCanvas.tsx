@@ -146,48 +146,52 @@ export function PitchCanvas({
 
           drawPitch(ctx, vp);
 
-          if (layers.heatmap && heatmapRendererRef.current && telemetry?.heatmaps) {
-            heatmapRendererRef.current.render(
-              ctx,
-              telemetry.heatmaps,
-              layers.heatmapMode,
-              vp
-            );
-          }
+          // When homography is paused (genuine close-up / celebration / replay),
+          // render ONLY the clean empty pitch + centered pause badge — ZERO stale dots or layers!
+          if (interpFrame.homographyValid) {
+            if (layers.heatmap && heatmapRendererRef.current && telemetry?.heatmaps) {
+              heatmapRendererRef.current.render(
+                ctx,
+                telemetry.heatmaps,
+                layers.heatmapMode,
+                vp
+              );
+            }
 
-          if (layers.voronoi && voronoiBufferRef.current) {
-            voronoiBufferRef.current.render(ctx, interpFrame.players, vp);
-          }
+            if (layers.voronoi && voronoiBufferRef.current) {
+              voronoiBufferRef.current.render(ctx, interpFrame.players, vp);
+            }
 
-          if (layers.hulls) {
-            drawHulls(ctx, interpFrame.players, vp);
-          }
+            if (layers.hulls) {
+              drawHulls(ctx, interpFrame.players, vp);
+            }
 
-          if (layers.defLines) {
-            drawDefLines(ctx, interpFrame.def_x, vp);
-          }
+            if (layers.defLines) {
+              drawDefLines(ctx, interpFrame.def_x, vp);
+            }
 
-          if (layers.passNetwork && telemetry?.passing_network) {
-            drawPassNetwork(ctx, telemetry, layers.players, vp, overrides);
-          }
+            if (layers.passNetwork && telemetry?.passing_network) {
+              drawPassNetwork(ctx, telemetry, layers.players, vp, overrides);
+            }
 
-          if (layers.players) {
-            const trajectory =
-              selectedPlayerId !== null
-                ? stabilized.trajectories.get(selectedPlayerId)
-                : undefined;
-            drawPlayers(
-              ctx,
-              interpFrame.players,
-              interpFrame.ball,
-              ballTrail,
-              selectedPlayerId,
-              trajectory,
-              interpFrame.f,
-              vp,
-              hoveredIdRef.current,
-              overrides
-            );
+            if (layers.players) {
+              const trajectory =
+                selectedPlayerId !== null
+                  ? stabilized.trajectories.get(selectedPlayerId)
+                  : undefined;
+              drawPlayers(
+                ctx,
+                interpFrame.players,
+                interpFrame.ball,
+                ballTrail,
+                selectedPlayerId,
+                trajectory,
+                interpFrame.f,
+                vp,
+                hoveredIdRef.current,
+                overrides
+              );
+            }
           }
 
           ctx.restore();
@@ -197,6 +201,10 @@ export function PitchCanvas({
           if (pausedNow !== lastTrackingPausedRef.current) {
             lastTrackingPausedRef.current = pausedNow;
             setIsTrackingPaused(pausedNow);
+            if (pausedNow) {
+              hoveredIdRef.current = null;
+              setHoveredInfo(null);
+            }
           }
 
           const notifyKey = `${Math.round(exactFrame * 2)}:${interpFrame.hullArea.team0_m2}:${interpFrame.hullArea.team1_m2}`;
@@ -258,7 +266,7 @@ export function PitchCanvas({
       const vp = viewportRef.current;
       const currentFrame = lastInterpRef.current;
 
-      if (!canvas || !vp || !currentFrame || !currentFrame.players) return;
+      if (!canvas || !vp || !currentFrame || !currentFrame.homographyValid || !currentFrame.players) return;
 
       const rect = canvas.getBoundingClientRect();
       const clickCanvasX = e.clientX - rect.left;
@@ -295,7 +303,7 @@ export function PitchCanvas({
       const canvas = canvasRef.current;
       const vp = viewportRef.current;
       const currentFrame = lastInterpRef.current;
-      if (!canvas || !vp || !currentFrame || !currentFrame.players) {
+      if (!canvas || !vp || !currentFrame || !currentFrame.homographyValid || !currentFrame.players) {
         hoveredIdRef.current = null;
         setHoveredInfo(null);
         return;

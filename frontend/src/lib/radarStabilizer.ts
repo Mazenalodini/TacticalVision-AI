@@ -760,12 +760,14 @@ export function stabilizeTelemetry(
       players: explicitInvalid ? [] : players,
       ball: explicitInvalid ? null : ballTimeline[i],
       def_x: explicitInvalid ? {} : def_x,
-      vor: [cleanVor0, cleanVor1],
-      hullArea: {
-        team0_m2: Math.round(emaHull0),
-        team1_m2: Math.round(emaHull1),
-      },
-      isGlitchBridged: glitch,
+      vor: explicitInvalid ? [50, 50] : [cleanVor0, cleanVor1],
+      hullArea: explicitInvalid
+        ? { team0_m2: 0, team1_m2: 0 }
+        : {
+            team0_m2: Math.round(emaHull0),
+            team1_m2: Math.round(emaHull1),
+          },
+      isGlitchBridged: explicitInvalid ? false : glitch,
       homographyValid,
     });
   }
@@ -821,6 +823,39 @@ export function interpolateStabilizedFrame(
 
   const a = frames[f0];
   const b = frames[f1];
+
+  // Never interpolate stale/corrupt player coordinates across paused (hv === false) boundaries!
+  if (!a.homographyValid && !b.homographyValid) {
+    return {
+      f: Math.round(a.f + (b.f - a.f) * alpha),
+      t: a.t + (b.t - a.t) * alpha,
+      players: [],
+      ball: null,
+      def_x: {},
+      vor: [50, 50],
+      hullArea: { team0_m2: 0, team1_m2: 0 },
+      isGlitchBridged: false,
+      homographyValid: false,
+    };
+  }
+  if (!a.homographyValid || !b.homographyValid) {
+    const pick = alpha < 0.5 ? a : b;
+    if (!pick.homographyValid) {
+      return {
+        f: pick.f,
+        t: pick.t,
+        players: [],
+        ball: null,
+        def_x: {},
+        vor: [50, 50],
+        hullArea: { team0_m2: 0, team1_m2: 0 },
+        isGlitchBridged: false,
+        homographyValid: false,
+      };
+    }
+    return pick;
+  }
+
   if (f0 === f1 || alpha <= 0.001) return a;
   if (alpha >= 0.999) return b;
 

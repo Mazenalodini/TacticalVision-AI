@@ -399,9 +399,12 @@ app.add_middleware(
 
 @app.get("/health")
 async def gpu_health() -> Dict[str, Any]:
-    """Return live GPU hardware info and verified model readiness."""
+    """Return live GPU hardware info, verified model readiness, and 3D PnLCalib status."""
+    from engine.pnlcalib_calibrator import check_pnlcalib_readiness
+
     gpu = detect_gpu_info()
     models_ready, missing_models, mdir = check_models_readiness()
+    pnl = check_pnlcalib_readiness(models_dir=mdir)
     return {
         "status": "ok",
         "gpu_available": gpu["gpu_available"],
@@ -410,6 +413,8 @@ async def gpu_health() -> Dict[str, Any]:
         "models_dir": str(mdir),
         "models_ready": models_ready,
         "missing_models": missing_models,
+        "calibrator_backend": pnl["calibrator_backend"],
+        "pnlcalib_ready": pnl["pnlcalib_ready"],
     }
 
 

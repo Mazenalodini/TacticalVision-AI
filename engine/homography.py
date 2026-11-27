@@ -297,18 +297,21 @@ class StabilizedHomography:
         if not (-12.0 <= cy_m <= self.pitch_cfg.width + 12.0):
             return False
 
-        # ── LAW 2: Image-Side vs Pitch-Half Consistency for Penalty Box Landmarks ──
-        if img_width is not None and img_width > 100 and num_inliers <= 7:
+        # ── LAW 2: Universal Image-Side vs Pitch-Half Consistency for Penalty Box Landmarks ──
+        # Applies across ALL inlier counts: if a penalty box sits clearly on the RIGHT side of
+        # the frame with open pitch/players to the left, it CANNOT map to the left half (< 50m),
+        # and vice-versa. Prevents shifted-but-positive-gradient (dX/du > 0) left/right mislabels!
+        if img_width is not None and img_width > 100:
             box_mask = (inl_dst[:, 0] <= 16.5) | (inl_dst[:, 0] >= self.pitch_cfg.length - 16.5)
             if int(np.sum(box_mask)) >= 2 and player_feet_px is not None and len(player_feet_px) >= 4:
                 box_u_med = float(np.median(inl_src[box_mask, 0]))
                 p_u_min = float(np.min(player_feet_px[:, 0]))
                 p_u_max = float(np.max(player_feet_px[:, 0]))
-                # Penalty box on right of frame with open pitch to the left -> must map to right half (> 52.5m)
-                if box_u_med > 0.58 * img_width and p_u_min < 0.38 * img_width and cx_m < 45.0:
+                # Penalty box on right of frame with open pitch to the left -> must map to right half (> 50m)
+                if box_u_med > 0.56 * img_width and p_u_min < 0.38 * img_width and cx_m < 50.0:
                     return False
-                # Penalty box on left of frame with open pitch to the right -> must map to left half (< 52.5m)
-                if box_u_med < 0.42 * img_width and p_u_max > 0.62 * img_width and cx_m > 60.0:
+                # Penalty box on left of frame with open pitch to the right -> must map to left half (< 55m)
+                if box_u_med < 0.44 * img_width and p_u_max > 0.62 * img_width and cx_m > 55.0:
                     return False
 
         # ── LAW 3: Player In-Bounds & Non-Collapse Sanity Gate ──
@@ -316,8 +319,8 @@ class StabilizedHomography:
         if not inb_ok:
             return False
 
-        # ── LAW 4: Continuity & Zero-DOF 4-Point Hallucination Guard ──
-        # Reject weak 4-5 inlier fits (0 DOF -> reproj=0.00m) that teleport the pitch without a scene cut
+        # ── LAW 4: Continuity & Zero-DOF / Mid-Clip Jump Guard ──
+        # Reject unmotivated pitch teleports when no scene cut occurred (e.g. penalty box suddenly jumping to midfield)
         if not is_scene_cut and self.H is not None:
             prev_ok, prev_med_x, _ = self._validate_player_inbounds(
                 self.H, player_feet_px, min_inbounds_ratio=0.0
@@ -328,7 +331,7 @@ class StabilizedHomography:
             jump_x = abs(cand_med_x - anchor_x)
             if num_inliers <= 5 and jump_x > 14.0:
                 return False
-            if num_inliers <= 8 and jump_x > 26.0:
+            if num_inliers <= 8 and jump_x > 24.0:
                 return False
 
         try:
@@ -363,6 +366,136 @@ class StabilizedHomography:
 
         self.valid_updates += 1
         self.reproj_errors_m.append(err_m)
+        return True
+
+    @staticmethod
+    def is_genuine_closeup(
+        person_boxes: Optional[np.ndarray],
+        frame_h: int,
+    ) -> bool:
+        """
+        Distinguish genuine non-tactical shots (extreme close-ups, player faces, crowd,
+        celebrations) from wide tactical gameplay (which MUST NOT falsely pause).
+        """
+        if frame_h <= 0:
+            return False
+        if person_boxes is None or len(person_boxes) == 0:
+            return True
+        bh_ratios = (person_boxes[:, 3] - person_boxes[:, 1]) / float(frame_h)
+        med_ratio = float(np.median(bh_ratios))
+        # Wide tactical broadcast shots have player heights 0.05..0.18 of frame height;
+        # extreme close-ups / celebrations have median player height > 0.30 or <= 2 giant boxes.
+        if med_ratio > 0.30:
+            return True
+        if len(person_boxes) <= 2 and float(np.max(bh_ratios)) > 0.28:
+            return True
+        return False
+
+    def apply_external_homography(
+        self,
+        H_cand: np.ndarray,
+        player_feet_px: Optional[np.ndarray] = None,
+        is_scene_cut: bool = False,
+        img_width: int = 1280,
+        img_height: int = 720,
+        reproj_err_m: float = 0.0,
+        ema_alpha_override: Optional[float] = None,
+    ) -> bool:
+        """
+        Validate and blend an externally estimated homography (e.g. from PnLCalib 3D)
+        through the exact same universal geometric sanity gates:
+          - Broadcast Monotonicity Law (`dX/du > 0`, `dY/dv > 0`, `det(J) > 0`)
+          - Realistic broadcast scale bounds
+          - Player In-Bounds & Non-Collapse Gate
+          - Smooth temporal EMA blending
+        """
+        if is_scene_cut:
+            self.reset_scene_cut()
+        if H_cand is None or H_cand.shape != (3, 3) or not np.all(np.isfinite(H_cand)):
+            return False
+        if abs(float(H_cand[2, 2])) < 1e-8:
+            return False
+
+        H_norm = H_cand.astype(np.float64) / float(H_cand[2, 2])
+        ref_x = float(img_width) * 0.5
+        ref_y = float(img_height) * 0.55
+
+        jac_info = self._evaluate_jacobian(H_norm, ref_x, ref_y)
+        if jac_info is None:
+            return False
+        dx_du, dy_dv, jac_det, cx_m, cy_m = jac_info
+
+        # Auto-resolve 180-deg flip ONLY if dX/du < 0
+        if dx_du < 0.0:
+            H_rot = self._rotate_180_pitch(H_norm)
+            if H_rot is None:
+                return False
+            rot_jac = self._evaluate_jacobian(H_rot, ref_x, ref_y)
+            if rot_jac is None:
+                return False
+            r_dx, r_dy, r_det, r_cx, r_cy = rot_jac
+            if r_dx > 0.0 and r_dy > 0.0 and r_det > 0.0:
+                H_norm = H_rot
+                dx_du, dy_dv, jac_det, cx_m, cy_m = r_dx, r_dy, r_det, r_cx, r_cy
+            else:
+                return False
+
+        if (
+            jac_det <= 0.0
+            or dx_du < self._MIN_DX_DU
+            or dx_du > self._MAX_DX_DU
+            or dy_dv < self._MIN_DY_DV
+            or dy_dv > self._MAX_DY_DV
+        ):
+            return False
+
+        if not (-20.0 <= cx_m <= self.pitch_cfg.length + 20.0):
+            return False
+        if not (-20.0 <= cy_m <= self.pitch_cfg.width + 20.0):
+            return False
+
+        inb_ok, cand_med_x, _inb_ratio = self._validate_player_inbounds(
+            H_norm, player_feet_px, min_inbounds_ratio=0.65
+        )
+        if not inb_ok:
+            return False
+
+        try:
+            H_inv_cand = np.linalg.inv(H_norm)
+        except np.linalg.LinAlgError:
+            return False
+
+        if self.H is None:
+            self.H = H_norm.copy()
+        else:
+            alpha = (
+                float(ema_alpha_override)
+                if ema_alpha_override is not None
+                else min(0.55, self.ema_alpha * 2.0)
+            )
+            blended = (1.0 - alpha) * self.H + alpha * H_norm
+            if abs(float(blended[2, 2])) > 1e-8:
+                self.H = blended / float(blended[2, 2])
+            else:
+                self.H = H_norm.copy()
+
+        try:
+            self.H_inv = np.linalg.inv(self.H)
+        except np.linalg.LinAlgError:
+            self.H = H_norm
+            self.H_inv = H_inv_cand
+
+        self._anchor_history.append(cand_med_x)
+        if len(self._anchor_history) > 10:
+            self._anchor_history.pop(0)
+        self._anchor_mean_x = float(np.median(self._anchor_history))
+        self.last_was_reset = False
+        self.homography_valid = True
+        self._consecutive_flow_frames = 0
+        self._consecutive_failures = 0
+        self.valid_updates += 1
+        if reproj_err_m >= 0.0:
+            self.reproj_errors_m.append(float(reproj_err_m))
         return True
 
     def propagate_optical_flow(

@@ -1,5 +1,6 @@
 import gc
 import json
+import random
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -12,9 +13,15 @@ from tqdm import tqdm
 from .config import EngineConfig, FIFAPitchConfig
 from .detector import DualModelDetector
 from .tracker import PlayerByteTracker, KalmanBallTracker, interpolate_ball_track
-from .team_classifier import SigLIPTeamClassifier, stabilize_team_assignments
+from .team_classifier import (
+    SigLIPTeamClassifier,
+    _pairwise_iou,
+    is_valid_tactical_box,
+    stabilize_team_assignments,
+)
 from .jersey_recognizer import JerseyRecognizer
 from .homography import StabilizedHomography
+from .pnlcalib_calibrator import PnLCalib3DCalibrator, check_pnlcalib_readiness
 from .tactics import TacticalAnalyticsEngine
 from .renderer import BroadcastRenderer, transcode_to_h264
 from .video_feature_extractor import SoccerNetVideoFeatureExtractor
@@ -104,13 +111,21 @@ class MatchAnalysisPipeline:
             min_span_m=self.cfg.min_span_m,
             min_convex_hull_area_m2=self.cfg.min_convex_hull_area_m2,
         )
+        models_dir_hint = Path(self.cfg.players_model_path).parent if self.cfg.players_model_path else None
+        calibrator = PnLCalib3DCalibrator(
+            self.pitch,
+            homography,
+            models_dir=models_dir_hint,
+            keyframe_stride=max(2, int(self.cfg.pitch_stride)),
+        )
 
         if self.detector is None:
-            print("[Init] Loading Dual-YOLOv11 detector & 32-keypoint pose weights...")
-            self.detector = DualModelDetector(self.cfg)
+            print("[Init] Loading Dual-YOLOv11 detector & pose weights...")
+            self.detector = DualModelDetector(self.cfg, load_pitch_model=not calibrator.is_pnlcalib_active)
+        self.detector.reset_tracker(fps=fps)
 
         # ======================================================================
-        # PASS 1: Detection, Tracking, Homography & Bounded Person Sampling
+        # PASS 1: Detection, Tracking, 3D/2D Calibration & Stratified Sampling
         # ======================================================================
         frame_records = []
         raw_ball_xy = []
@@ -122,17 +137,20 @@ class MatchAnalysisPipeline:
         full_crop_stride = max(1, int(fps // 4))    # Sample full person crops ~4 Hz for Model 4
         pitch_stride = max(1, int(self.cfg.pitch_stride))
 
-        # Strict per-track memory caps so 30s-180s+ videos never accumulate unbounded crops in RAM
+        # Full-Video Stratified Reservoir Sampling (Algorithm R, deterministic seed):
+        # Uniformly covers 0% -> 100% of ANY video length without saturating on early frames!
         max_team_crops_per_track = 16
         max_full_crops_per_track = max(16, int(self.cfg.jersey_max_crops_per_track) * 2)
-        max_total_jersey_samples = 240
+        max_total_jersey_samples = 720
+        reservoir_seen = 0
+        reservoir_rng = random.Random(42)
         team_crop_counts: Dict[int, int] = defaultdict(int)
         full_crop_counts: Dict[int, int] = defaultdict(int)
         prev_thumb_hsv: Optional[np.ndarray] = None
         prev_thumb_gray: Optional[np.ndarray] = None
         prev_flow_gray: Optional[np.ndarray] = None
         pitch_green_calibrator = SigLIPTeamClassifier(enable_siglip=False)
-        green_cal_stride = max(1, total_frames // 20)
+        green_cal_stride = max(1, total_frames // 24)
 
         pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)", mininterval=0.25)
         for f_idx in pbar:
@@ -166,8 +184,10 @@ class MatchAnalysisPipeline:
             if self.cfg.enable_action_spotting and (f_idx % spotting_stride == 0):
                 spotting_frames_bgr.append(cv2.resize(frame, (224, 224), interpolation=cv2.INTER_LINEAR))
 
-            run_pitch = is_scene_cut or (homography.H is None) or (f_idx % pitch_stride == 0)
-            det = self.detector.infer_frame(frame, run_pitch=run_pitch, use_botsort=True)
+            run_fallback_pitch = (not calibrator.is_pnlcalib_active) and (
+                is_scene_cut or (homography.H is None) or (f_idx % pitch_stride == 0)
+            )
+            det = self.detector.infer_frame(frame, run_pitch=run_fallback_pitch, use_botsort=True)
             if det.get("person_tids") is not None and len(det["person_tids"]) == len(det["person_boxes"]):
                 boxes = det["person_boxes"]
                 confs = det["person_confs"]
@@ -185,24 +205,18 @@ class MatchAnalysisPipeline:
                 if len(boxes) > 0
                 else None
             )
-            if run_pitch:
-                homography.update(
-                    det["pitch_kpts_xy"],
-                    det["pitch_kpts_conf"],
-                    player_feet_px=feet_px,
-                    is_scene_cut=is_scene_cut,
-                    prev_gray=prev_flow_gray,
-                    cur_gray=cur_flow_gray,
-                    exclude_boxes=boxes,
-                    img_width=width,
-                )
-            elif homography.H is not None and prev_flow_gray is not None:
-                homography.propagate_optical_flow(
-                    prev_flow_gray,
-                    cur_flow_gray,
-                    exclude_boxes=boxes,
-                    player_feet_px=feet_px,
-                )
+            calibrator.update_frame(
+                frame_idx=f_idx,
+                frame_bgr=frame,
+                prev_gray=prev_flow_gray,
+                cur_gray=cur_flow_gray,
+                person_boxes=boxes,
+                player_feet_px=feet_px,
+                is_scene_cut=is_scene_cut,
+                fallback_kpts_xy=det["pitch_kpts_xy"],
+                fallback_kpts_conf=det["pitch_kpts_conf"],
+                run_fallback_pitch=run_fallback_pitch,
+            )
             prev_flow_gray = cur_flow_gray
 
             # Project player foot-points (bottom center of bounding box) onto FIFA pitch (meters)
@@ -212,22 +226,38 @@ class MatchAnalysisPipeline:
             else:
                 feet_m = None
 
+            # Pairwise IoU occlusion check for strict tactical-player quality gate
+            if len(boxes) > 1 and (f_idx % sample_stride == 0):
+                iou_mat = _pairwise_iou(boxes)
+                box_max_ious = iou_mat.max(axis=1)
+            else:
+                box_max_ious = np.zeros((len(boxes),), dtype=np.float32)
+
             for i in range(len(boxes)):
                 crop = None
                 full_crop = None
                 c_cls = int(clss[i])
                 tid_i = int(tids[i])
                 if c_cls == self.cfg.player_id and (f_idx % sample_stride == 0):
+                    tactical_ok = is_valid_tactical_box(
+                        boxes[i], height, width, max_iou=float(box_max_ious[i]), iou_thresh=0.15
+                    )
                     need_track_crop = team_crop_counts[tid_i] < max_team_crops_per_track
-                    need_global_sample = len(jersey_samples) < max_total_jersey_samples
-                    if need_track_crop or need_global_sample:
+                    if need_track_crop or tactical_ok:
                         cropped = SigLIPTeamClassifier.crop_jersey(frame, boxes[i])
                         if cropped is not None:
                             if need_track_crop:
                                 crop = cropped
                                 team_crop_counts[tid_i] += 1
-                            if need_global_sample:
-                                jersey_samples.append(cropped)
+                            # Strict tactical-player reservoir sampling across full 0% -> 100% timeline
+                            if tactical_ok:
+                                reservoir_seen += 1
+                                if len(jersey_samples) < max_total_jersey_samples:
+                                    jersey_samples.append(cropped)
+                                else:
+                                    j = reservoir_rng.randint(0, reservoir_seen - 1)
+                                    if j < max_total_jersey_samples:
+                                        jersey_samples[j] = cropped
 
                 if (
                     self.cfg.enable_jersey_ocr
@@ -260,12 +290,14 @@ class MatchAnalysisPipeline:
             })
 
         cap.release()
+        calibrator_summary = calibrator.summary()
+        calibrator.close()
 
-        # Sequential Stage Memory Release: unload heavy YOLO models BEFORE Stage 1b ResNet-152
+        # Sequential Stage Memory Release: unload heavy YOLO & PnLCalib models BEFORE Stage 1b ResNet-152
         if self.detector is not None:
             if hasattr(self.detector, "players_model"):
                 del self.detector.players_model
-            if hasattr(self.detector, "pitch_model"):
+            if hasattr(self.detector, "pitch_model") and self.detector.pitch_model is not None:
                 del self.detector.pitch_model
             del self.detector
             self.detector = None
@@ -353,11 +385,31 @@ class MatchAnalysisPipeline:
         # ======================================================================
         # STAGE 2: Ball Interpolation, Team Classification & Model 4 Jersey OCR
         # ======================================================================
-        print("[Stage 2] Clustering Teams (Torso-Masked CIELAB) & Running Model 4 Jersey Recognition...")
+        print("[Stage 2] Clustering Teams (Universal 2-Stage CIELAB) & Running Model 4 Jersey Recognition...")
         team_classifier = SigLIPTeamClassifier(enable_siglip=self.cfg.enable_siglip)
         team_classifier.grass_h_lo = pitch_green_calibrator.grass_h_lo
         team_classifier.grass_h_hi = pitch_green_calibrator.grass_h_hi
+        team_classifier.grass_s_min = pitch_green_calibrator.grass_s_min
+        # Fallback: if strict tactical gate yielded < 12 samples (e.g. ultra-short/zoomed clip),
+        # supplement from per-track crops so clustering still fits cleanly
+        if len(jersey_samples) < 12:
+            for rec in frame_records:
+                for ent in rec["entities"]:
+                    if ent.get("crop") is not None and int(ent["cls"]) == self.cfg.player_id:
+                        jersey_samples.append(ent["crop"])
+                        if len(jersey_samples) >= 120:
+                            break
+                if len(jersey_samples) >= 120:
+                    break
         team_classifier.fit(jersey_samples)
+        extracted_kit_hex = team_classifier.get_kit_colors_hex()
+        team_diag = {
+            "mode": team_classifier.mode_used,
+            "delta_e_lab": round(float(team_classifier.cluster_delta_e), 2),
+            "stratified_samples_seen": reservoir_seen,
+            "stratified_samples_used": len(jersey_samples),
+            **extracted_kit_hex,
+        }
         stabilize_team_assignments(
             frame_records,
             team_classifier,
@@ -436,9 +488,13 @@ class MatchAnalysisPipeline:
             "fps": round(fps, 2),
             "pitch_dimensions_m": [self.pitch.length, self.pitch.width],
             "team_colors": self.cfg.team_colors_hex,
+            "team_a_kit_hex": extracted_kit_hex["team_a_kit_hex"],
+            "team_b_kit_hex": extracted_kit_hex["team_b_kit_hex"],
         }
         telemetry["engine_diagnostics"] = {
-            "homography": homography.summary(),
+            "homography": calibrator_summary,
+            "calibrator_backend": calibrator_summary.get("calibrator_backend", "yolo_pitch_fallback"),
+            "team_classifier": team_diag,
             "ball_coverage_pct": round(100.0 * ball_tracked_frames / max(1, len(frame_records)), 2),
             "processing_time_s": 0.0,
             "jersey_recognition": jersey_diag,

@@ -143,6 +143,8 @@ export interface MatchInfo {
   fps: number;
   pitch_dimensions_m: [number, number]; // [105, 68]
   team_colors: Record<string, string>; // {"0":"#1EC8FF", "1":"#FF5555"}
+  team_a_kit_hex?: string;
+  team_b_kit_hex?: string;
 }
 
 // ── engine_diagnostics ───────────────────────────────────────────
@@ -152,6 +154,8 @@ export interface HomographySummary {
   rejected_frames: number;
   stability_rate_pct: number;
   mean_inlier_reproj_error_m: number | null;
+  flow_propagated_frames?: number;
+  calibrator_backend?: string;
 }
 
 export interface JerseyRecognitionDiagnostics {
@@ -166,6 +170,8 @@ export interface JerseyRecognitionDiagnostics {
 
 export interface EngineDiagnostics {
   homography: HomographySummary;
+  calibrator_backend?: string;
+  team_classifier?: Record<string, unknown> | null;
   ball_coverage_pct: number;
   processing_time_s: number;
   jersey_recognition?: JerseyRecognitionDiagnostics | null;

@@ -157,6 +157,8 @@ class MatchInfo(BaseModel):
     fps: float
     pitch_dimensions_m: list[float]
     team_colors: dict[str, str]      # {"0": "#1EC8FF", "1": "#FF5555"}
+    team_a_kit_hex: Optional[str] = None
+    team_b_kit_hex: Optional[str] = None
 
 
 # ── engine_diagnostics ──────────────────────────────────────────────
@@ -166,6 +168,8 @@ class HomographySummary(BaseModel):
     rejected_frames: int
     stability_rate_pct: float
     mean_inlier_reproj_error_m: Optional[float] = None
+    flow_propagated_frames: Optional[int] = None
+    calibrator_backend: Optional[str] = None
 
 
 class ActionSpottingEvent(BaseModel):
@@ -181,6 +185,8 @@ class ActionSpottingEvent(BaseModel):
 
 class EngineDiagnostics(BaseModel):
     homography: HomographySummary
+    calibrator_backend: Optional[str] = None
+    team_classifier: Optional[dict[str, Any]] = None
     ball_coverage_pct: float
     processing_time_s: float
     jersey_recognition: Optional[dict[str, Any]] = None
