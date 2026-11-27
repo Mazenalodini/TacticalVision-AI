@@ -245,3 +245,80 @@ def test_crop_jersey_returns_detached_copy_no_frame_leak():
     assert crop is not None
     assert crop.base is None  # Owning copy, NOT a view into big_frame!
     assert crop.nbytes < 50_000  # ~4-15 KB instead of 6.22 MB
+
+
+# ---------------------------------------------------------------------------
+# 4. Windows Concurrent Atomic Job JSON Stress Test (Zero WinError 5)
+# ---------------------------------------------------------------------------
+
+
+def test_job_runner_concurrent_windows_atomic_json_stress(tmp_path: Path):
+    """Hammer the same job JSON file from writer + reader threads on Windows with 0 PermissionErrors."""
+    import threading
+    from backend.services.job_runner import JobRunner
+
+    runner = JobRunner()
+    runner.jobs_dir = tmp_path
+    job_id = "job_stress_win5"
+
+    # Seed initial job status
+    runner._write_status(
+        job_id=job_id,
+        status="detecting",
+        progress_pct=4.0,
+        stage_label="Initial",
+        elapsed_s=0.0,
+        match_id="user_stress",
+    )
+
+    errors: list[Exception] = []
+    reads_ok = 0
+    reads_lock = threading.Lock()
+    stop_readers = threading.Event()
+
+    def writer_worker(worker_idx: int) -> None:
+        try:
+            for step in range(45):
+                runner._write_status(
+                    job_id=job_id,
+                    status="detecting",
+                    progress_pct=round(4.0 + (step / 45.0) * 90.0, 1),
+                    stage_label=f"Writer {worker_idx} step {step}",
+                    elapsed_s=float(step),
+                    match_id="user_stress",
+                )
+        except Exception as exc:
+            errors.append(exc)
+
+    def reader_worker() -> None:
+        nonlocal reads_ok
+        try:
+            while not stop_readers.is_set():
+                st = runner.get_job_status(job_id)
+                assert st is not None, "get_job_status returned None under concurrent writes"
+                assert st["job_id"] == job_id
+                with reads_lock:
+                    reads_ok += 1
+        except Exception as exc:
+            errors.append(exc)
+
+    writers = [threading.Thread(target=writer_worker, args=(i,)) for i in range(3)]
+    readers = [threading.Thread(target=reader_worker) for _ in range(4)]
+
+    for r in readers:
+        r.start()
+    for w in writers:
+        w.start()
+    for w in writers:
+        w.join()
+    stop_readers.set()
+    for r in readers:
+        r.join()
+
+    assert not errors, f"Concurrent Windows JSON I/O raised errors: {errors}"
+    assert reads_ok >= 50
+    leftover_tmps = list(tmp_path.glob("*.tmp"))
+    assert leftover_tmps == [], f"Leftover temp files found: {leftover_tmps}"
+    final = runner.get_job_status(job_id)
+    assert final is not None and final["job_id"] == job_id
+

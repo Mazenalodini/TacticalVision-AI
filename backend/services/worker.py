@@ -19,6 +19,7 @@ import shutil
 import sys
 import time
 import traceback
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -100,14 +101,29 @@ def update_job_status(
         "video_path": video_path,
     }
 
-    temp_path = jobs_dir / f"{job_id}.json.tmp"
+    temp_path = jobs_dir / f"{job_id}.json.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
 
     try:
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        temp_path.replace(target_path)
+            f.flush()
+        for attempt in range(10):
+            try:
+                os.replace(temp_path, target_path)
+                return
+            except (PermissionError, OSError):
+                if attempt + 1 < 10:
+                    time.sleep(min(0.08, 0.02 * (1.35 ** attempt)))
+                else:
+                    raise
     except Exception as e:
         sys.stderr.write(f"Failed to update job status: {e}\n")
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 class ProgressParserStream:

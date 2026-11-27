@@ -24,6 +24,57 @@ from .remote_gpu_client import (
     run_remote_gpu_bridge,
 )
 
+# Module-level reentrant lock protecting all job_*.json reads & atomic replaces on Windows
+_JOB_IO_LOCK = threading.RLock()
+
+
+def _atomic_write_json(target: Path, payload: dict[str, Any], max_retries: int = 10) -> None:
+    """Thread-safe and Windows-safe atomic JSON write with unique .tmp and retry backoff."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f"{target.name}.{threading.get_ident()}.{uuid.uuid4().hex[:6]}.tmp"
+    with _JOB_IO_LOCK:
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+                f.flush()
+
+            last_exc: Optional[Exception] = None
+            for attempt in range(max_retries):
+                try:
+                    os.replace(tmp, target)
+                    return
+                except (PermissionError, OSError) as exc:
+                    last_exc = exc
+                    if attempt + 1 < max_retries:
+                        backoff = min(0.08, 0.02 * (1.35 ** attempt))
+                        time.sleep(backoff)
+            if last_exc is not None:
+                raise last_exc
+        finally:
+            try:
+                if tmp.exists():
+                    tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+def _safe_read_json(path: Path, max_retries: int = 10) -> Optional[dict[str, Any]]:
+    """Thread-safe and Windows-safe JSON read with retry backoff against transient locks."""
+    with _JOB_IO_LOCK:
+        for attempt in range(max_retries):
+            if not path.exists():
+                return None
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except FileNotFoundError:
+                return None
+            except (PermissionError, OSError, json.JSONDecodeError):
+                if attempt + 1 < max_retries:
+                    backoff = min(0.08, 0.02 * (1.35 ** attempt))
+                    time.sleep(backoff)
+        return None
+
 
 class JobRunner:
     def __init__(self) -> None:
@@ -194,13 +245,11 @@ class JobRunner:
     def get_job_status(self, job_id: str) -> Optional[dict[str, Any]]:
         """Read current job status from backend/jobs/{job_id}.json."""
         job_file = self.jobs_dir / f"{job_id}.json"
-        if not job_file.exists():
+        data = _safe_read_json(job_file)
+        if data is None:
             return None
 
         try:
-            with open(job_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
             # Check if process exited unexpectedly without updating terminal status
             proc = self._active_processes.get(job_id)
             if proc and proc.poll() is not None:
@@ -226,18 +275,13 @@ class JobRunner:
 
             return data
         except Exception:
-            return None
+            return data
 
     def cancel_job(self, job_id: str) -> Optional[dict[str, Any]]:
         """Safely terminate an active worker subprocess, mark cancelled, and clean up temp files."""
         job_file = self.jobs_dir / f"{job_id}.json"
-        if not job_file.exists():
-            return None
-
-        try:
-            with open(job_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
+        data = _safe_read_json(job_file)
+        if data is None:
             return None
 
         if data.get("status") in ("completed", "failed", "cancelled"):
@@ -360,7 +404,6 @@ class JobRunner:
         video_path: str | None = None,
     ) -> None:
         target = self.jobs_dir / f"{job_id}.json"
-        tmp = self.jobs_dir / f"{job_id}.json.tmp"
         payload = {
             "job_id": job_id,
             "status": status,
@@ -372,9 +415,7 @@ class JobRunner:
             "pid": pid,
             "video_path": video_path,
         }
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        tmp.replace(target)
+        _atomic_write_json(target, payload)
 
 
 # Singleton

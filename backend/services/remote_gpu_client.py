@@ -141,7 +141,7 @@ def cancel_remote_gpu_job_best_effort(target_url: str, remote_job_id: str) -> No
 
 
 class _ProgressFileWrapper:
-    """File-like wrapper that streams video chunks and reports uploaded MB progress."""
+    """File-like wrapper that streams video chunks and reports throttled uploaded MB progress."""
 
     def __init__(
         self,
@@ -150,6 +150,7 @@ class _ProgressFileWrapper:
         on_progress: Callable[[int, int], None],
         cancel_event: threading.Event,
         chunk_cap: int = 262_144,
+        min_interval_s: float = 0.75,
     ) -> None:
         self._fh = fh
         self._total = max(1, int(total_bytes))
@@ -157,7 +158,9 @@ class _ProgressFileWrapper:
         self._on_progress = on_progress
         self._cancel_event = cancel_event
         self._chunk_cap = chunk_cap
+        self._min_interval_s = float(min_interval_s)
         self._last_report = 0.0
+        self._last_pct_int = -1
 
     def read(self, size: int = -1) -> bytes:
         if self._cancel_event.is_set():
@@ -167,15 +170,26 @@ class _ProgressFileWrapper:
         if data:
             self._sent = min(self._total, self._sent + len(data))
             now = time.monotonic()
-            if (now - self._last_report) >= 0.35 or self._sent >= self._total:
+            pct_int = int(4.0 + (self._sent / self._total) * 8.0)
+            if (
+                (now - self._last_report) >= self._min_interval_s
+                or pct_int > self._last_pct_int
+                or self._sent >= self._total
+            ):
                 self._last_report = now
-                self._on_progress(self._sent, self._total)
+                self._last_pct_int = pct_int
+                try:
+                    self._on_progress(self._sent, self._total)
+                except Exception:
+                    # Never let a transient status-file disk lock abort an active GPU upload
+                    pass
         return data
 
     def seek(self, offset: int, whence: int = 0) -> int:
         pos = self._fh.seek(offset, whence)
         if pos == 0:
             self._sent = 0
+            self._last_pct_int = -1
         return pos
 
     def tell(self) -> int:
@@ -221,17 +235,22 @@ def run_remote_gpu_bridge(
         if cancel_event.is_set():
             return
 
+        def _safe_progress(st: str, pct: float, msg: str) -> None:
+            """Non-fatal progress write guard so transient disk locks never abort an active GPU job."""
+            try:
+                on_status(st, pct, msg, _elapsed(), None)
+            except Exception:
+                pass
+
         def _report_upload_progress(sent_bytes: int, total_bytes: int) -> None:
             ratio = min(1.0, max(0.0, sent_bytes / max(1, total_bytes)))
             pct = 4.0 + ratio * 8.0  # Smoothly 4% -> 12%
             sent_mb = sent_bytes / (1024.0 * 1024.0)
             tot_mb = total_bytes / (1024.0 * 1024.0)
-            on_status(
+            _safe_progress(
                 "detecting",
                 round(pct, 1),
                 f"رفع الفيديو إلى خادم GPU ({sent_mb:.1f} / {tot_mb:.1f} MB)...",
-                _elapsed(),
-                None,
             )
 
         # 1. Stream video upload to POST {clean_url}/analyze with generous write timeout (900s)
@@ -310,7 +329,7 @@ def run_remote_gpu_bridge(
 
                 # Map remote 0..100% into 12%..95% (reserving 4..12% upload & 95..100% download)
                 mapped_pct = min(95.0, max(12.0, 12.0 + r_pct * 0.83))
-                on_status(r_stage, mapped_pct, r_msg, _elapsed(), None)
+                _safe_progress(r_stage, mapped_pct, r_msg)
 
                 if cancel_event.wait(poll_interval_s):
                     cancel_remote_gpu_job_best_effort(clean_url, remote_job_id)
