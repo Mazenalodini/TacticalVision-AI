@@ -335,15 +335,15 @@ export function stabilizeTelemetry(
         const dist = Math.hypot(cur.x - prev.x, cur.y - prev.y);
 
         let glitchMidCount = 0;
-        if (gap > 6 && gap <= 36) {
+        if (gap > 10 && gap <= 36) {
           for (let fIdx = prev.idx + 1; fIdx < cur.idx; fIdx++) {
             if (isGlitchFrame[fIdx]) glitchMidCount++;
           }
         }
 
-        const isShortDropout = gap > 1 && gap <= 6;
-        const isGlitchBurst = gap > 6 && gap <= 36 && glitchMidCount >= Math.ceil((gap - 1) * 0.4);
-        const maxBridgeDist = maxJumpForDt(gap) * 1.25;
+        const isShortDropout = gap > 1 && gap <= 10;
+        const isGlitchBurst = gap > 10 && gap <= 36 && glitchMidCount >= Math.ceil((gap - 1) * 0.4);
+        const maxBridgeDist = maxJumpForDt(gap) * 1.35;
 
         if ((isShortDropout || isGlitchBurst) && dist <= maxBridgeDist) {
           for (let g = 1; g < gap; g++) {
@@ -492,6 +492,61 @@ export function stabilizeTelemetry(
 
     trajectories.set(trackId, trajPoints);
   });
+
+  // 2D. Anti-flicker short empty-frame hold/interpolation (1..10 frames) so transient homography drops never blink blank
+  let iEmpty = 0;
+  while (iEmpty < nFrames) {
+    if (perFramePlayers[iEmpty].length > 0) {
+      iEmpty++;
+      continue;
+    }
+    const startEmpty = iEmpty;
+    while (iEmpty < nFrames && perFramePlayers[iEmpty].length === 0) {
+      iEmpty++;
+    }
+    const endEmpty = iEmpty - 1;
+    const gapLen = endEmpty - startEmpty + 1;
+    if (gapLen <= 10) {
+      const prevIdx = startEmpty - 1;
+      const nextIdx = endEmpty + 1;
+      const hasPrev = prevIdx >= 0 && perFramePlayers[prevIdx].length > 0;
+      const hasNext = nextIdx < nFrames && perFramePlayers[nextIdx].length > 0;
+      if (hasPrev && hasNext) {
+        const prevMap = new Map<number, StabilizedPlayer>();
+        for (const p of perFramePlayers[prevIdx]) prevMap.set(p.id, p);
+        const nextMap = new Map<number, StabilizedPlayer>();
+        for (const p of perFramePlayers[nextIdx]) nextMap.set(p.id, p);
+
+        for (let k = startEmpty; k <= endEmpty; k++) {
+          const ratio = (k - prevIdx) / (nextIdx - prevIdx);
+          const held: StabilizedPlayer[] = [];
+          prevMap.forEach((pa, pid) => {
+            const pb = nextMap.get(pid);
+            if (pb && Math.hypot(pb.x - pa.x, pb.y - pa.y) <= maxJumpForDt(nextIdx - prevIdx) * 1.4) {
+              held.push({
+                ...pa,
+                x: pa.x + (pb.x - pa.x) * ratio,
+                y: pa.y + (pb.y - pa.y) * ratio,
+                spd: pa.spd + (pb.spd - pa.spd) * ratio,
+              });
+            } else if (ratio < 0.5) {
+              held.push({ ...pa });
+            }
+          });
+          if (ratio >= 0.5) {
+            nextMap.forEach((pb, pid) => {
+              if (!prevMap.has(pid)) held.push({ ...pb });
+            });
+          }
+          perFramePlayers[k] = held;
+        }
+      } else if (hasPrev) {
+        for (let k = startEmpty; k <= endEmpty; k++) {
+          perFramePlayers[k] = perFramePlayers[prevIdx].map((p) => ({ ...p }));
+        }
+      }
+    }
+  }
 
   // ── 3. Ball Outlier Rejection, Corner Snap Guard & 3-Tap Smoothing ──
   interface RawBallObs {

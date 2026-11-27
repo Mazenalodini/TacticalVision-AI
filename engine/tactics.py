@@ -325,10 +325,15 @@ class TacticalAnalyticsEngine:
             for ent in rec["entities"]:
                 tid = int(ent["track_id"])
                 cls_votes[tid][int(ent["cls"])] += 1
-                if ent.get("pitch_xy") is None:
+                px = ent.get("pitch_xy")
+                if px is None:
+                    continue
+                pt = np.array(px, dtype=np.float32)
+                # Filter out clearly out-of-bounds sideline staff (y < -2.5 or y > 70.5)
+                if not np.all(np.isfinite(pt)) or float(pt[1]) < -2.5 or float(pt[1]) > 70.5:
                     continue
                 track_frames[tid].append(f_idx)
-                track_coords[tid].append(np.array(ent["pitch_xy"], dtype=np.float32))
+                track_coords[tid].append(pt)
                 if ent.get("team", -1) in (0, 1):
                     track_team[tid] = int(ent["team"])
 
@@ -349,11 +354,41 @@ class TacticalAnalyticsEngine:
                     ent["cls"] = self.cfg.referee_id
                     ent["team"] = -1
 
-        # 2. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & Sprints
+        # 2. Detect homography reset/jump exclusion windows (+-0.5s) to prevent fake sprints
+        n_total_frames = len(frame_records)
+        exclude_radius = max(1, int(round(0.5 * self.fps)))
+        homography_excluded = np.zeros(n_total_frames, dtype=bool)
+        prev_frame_pts: Dict[int, np.ndarray] = {}
+        for f_idx, rec in enumerate(frame_records):
+            cur_frame_pts: Dict[int, np.ndarray] = {}
+            big_jumps = 0
+            for ent in rec["entities"]:
+                px = ent.get("pitch_xy")
+                if px is None:
+                    continue
+                pt = np.asarray(px, dtype=np.float32)
+                if not np.all(np.isfinite(pt)):
+                    continue
+                tid = int(ent["track_id"])
+                cur_frame_pts[tid] = pt
+                prev_pt = prev_frame_pts.get(tid)
+                if prev_pt is not None and float(np.linalg.norm(pt - prev_pt)) > 2.5:
+                    big_jumps += 1
+            if rec.get("homography_reset") or rec.get("H") is None or big_jumps >= 3:
+                lo = max(0, f_idx - exclude_radius)
+                hi = min(n_total_frames, f_idx + exclude_radius + 1)
+                homography_excluded[lo:hi] = True
+            prev_frame_pts = cur_frame_pts
+
+        # 3. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & True Sustained Sprints
         pos_win = max(1, int(self.cfg.position_moving_avg_window))
         vel_win = max(1, int(self.cfg.speed_window_frames))
         med_k = max(1, int(self.cfg.speed_median_filter))
         max_spd_cap = float(self.cfg.max_valid_speed_kmh)
+        max_human_mps = 11.5  # > 11.5 m/s (41.4 km/h) single-frame jump is a homography glitch, NOT a sprint
+        sprint_thresh_kmh = max(25.2, float(self.cfg.sprint_threshold_kmh))  # >= 7.0 m/s (25.2 km/h)
+        min_sprint_frames = max(8, int(round(0.8 * self.fps)))  # >= 0.8s sustained sprint
+        sprint_cooldown_s = 4.0
 
         player_stats: Dict[int, dict] = {}
         speed_lookup: Dict[Tuple[int, int], float] = {}
@@ -365,26 +400,54 @@ class TacticalAnalyticsEngine:
             n_obs = len(f_list)
             raw_speeds = np.zeros(n_obs, dtype=np.float32)
             step_dists = np.zeros(n_obs, dtype=np.float32)
+            obs_excluded = np.zeros(n_obs, dtype=bool)
+
+            # Exclude +-0.5s around track start and any track re-entry gaps
+            for k in range(n_obs):
+                if (f_list[k] - f_list[0]) <= exclude_radius:
+                    obs_excluded[k] = True
+                if 0 <= f_list[k] < n_total_frames and homography_excluded[f_list[k]]:
+                    obs_excluded[k] = True
 
             for k in range(1, n_obs):
                 dt_step = (f_list[k] - f_list[k - 1]) / self.fps
-                if dt_step <= 0 or dt_step > 0.6:
+                if dt_step <= 0 or dt_step > 0.5:
+                    # Track re-entry gap: exclude +-0.5s around re-entry
+                    for j in range(max(0, k - exclude_radius), min(n_obs, k + exclude_radius + 1)):
+                        if abs(f_list[j] - f_list[k]) <= exclude_radius:
+                            obs_excluded[j] = True
                     continue
+
+                raw_d_step = float(np.linalg.norm(pts[k] - pts[k - 1]))
+                raw_inst_mps = raw_d_step / dt_step
+                if raw_inst_mps > max_human_mps:
+                    # Physically impossible single-frame homography glitch: reject instead of clamping into a sprint!
+                    for j in range(max(0, k - exclude_radius), min(n_obs, k + exclude_radius + 1)):
+                        if abs(f_list[j] - f_list[k]) <= exclude_radius:
+                            obs_excluded[j] = True
+                    continue
+
                 d_step = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k - 1]))
-                inst_spd = (d_step / dt_step) * 3.6
-                if inst_spd > max_spd_cap:
+                inst_mps = d_step / dt_step
+                if inst_mps > max_human_mps:
+                    obs_excluded[k] = True
+                    continue
+                if inst_mps * 3.6 > max_spd_cap:
                     d_step = (max_spd_cap / 3.6) * dt_step
                 step_dists[k] = d_step
 
                 # Multi-frame windowed speed suppresses single-frame projection noise
                 k_lo = max(0, k - vel_win)
-                # Ensure continuity across k_lo..k
                 while k_lo < k - 1 and (f_list[k] - f_list[k_lo]) > max(vel_win * 2, int(self.fps * 0.8)):
                     k_lo += 1
                 dt_win = (f_list[k] - f_list[k_lo]) / self.fps
                 if dt_win > 0:
                     d_win = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k_lo]))
-                    raw_speeds[k] = min(max_spd_cap, (d_win / dt_win) * 3.6)
+                    win_mps = d_win / dt_win
+                    if win_mps <= max_human_mps:
+                        raw_speeds[k] = min(max_spd_cap, win_mps * 3.6)
+                    else:
+                        obs_excluded[k] = True
 
             if n_obs >= med_k and med_k > 1:
                 speeds = np.clip(median_filter(raw_speeds, size=med_k, mode="nearest"), 0.0, max_spd_cap)
@@ -396,24 +459,31 @@ class TacticalAnalyticsEngine:
             sprint_streak = 0
             sprint_count = 0
             in_sprint = False
+            last_sprint_t = -1e9
 
             for k in range(1, n_obs):
                 dt_step = (f_list[k] - f_list[k - 1]) / self.fps
-                if dt_step <= 0 or dt_step > 0.6:
+                if dt_step <= 0 or dt_step > 0.5 or obs_excluded[k]:
                     sprint_streak = 0
                     in_sprint = False
                     continue
                 spd_kmh = float(speeds[k])
-                if spd_kmh >= self.cfg.sprint_threshold_kmh:
+                if spd_kmh >= sprint_thresh_kmh:
                     sprint_streak += 1
-                    if not in_sprint and sprint_streak >= max(3, int(self.fps * 0.4)):
+                    cur_t = f_list[k] / self.fps
+                    if (
+                        not in_sprint
+                        and sprint_streak >= min_sprint_frames
+                        and (cur_t - last_sprint_t) >= sprint_cooldown_s
+                    ):
                         in_sprint = True
+                        last_sprint_t = cur_t
                         if track_role.get(tid) != "referee" and tid in track_team:
                             sprint_count += 1
                             sprint_events.append({
                                 "type": "sprint",
                                 "frame": int(f_list[k]),
-                                "time_s": round(f_list[k] / self.fps, 2),
+                                "time_s": round(cur_t, 2),
                                 "track_id": tid,
                                 "team": track_team.get(tid, -1),
                                 "speed_kmh": round(spd_kmh, 1),
@@ -515,6 +585,8 @@ class TacticalAnalyticsEngine:
 
                 if px is not None and tm in (0, 1) and ent["cls"] in (self.cfg.player_id, self.cfg.goalkeeper_id):
                     pt = np.array(px, dtype=np.float32)
+                    if not np.all(np.isfinite(pt)) or float(pt[1]) < -2.5 or float(pt[1]) > 70.5:
+                        continue
                     all_xy.append(pt)
                     all_tm.append(tm)
                     if ent["cls"] == self.cfg.player_id:

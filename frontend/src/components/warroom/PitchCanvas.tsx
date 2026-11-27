@@ -4,7 +4,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Crosshair } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry } from "@/lib/types";
-import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
+import {
+  resolvePlayerIdentity,
+  syncMatchSquadNumbers,
+  usePlayerOverrides,
+} from "@/lib/jerseyOverrides";
 import { BidiNum } from "@/components/ui/BidiNum";
 import {
   stabilizeTelemetry,
@@ -66,6 +70,12 @@ export function PitchCanvas({
     pxX: number;
     pxY: number;
   } | null>(null);
+
+  // Keep match-wide collision-free 1..99 squad slot mapping synced for unverified tracks > 99
+  useMemo(
+    () => syncMatchSquadNumbers(matchId, telemetry, overrides),
+    [matchId, telemetry, overrides]
+  );
 
   // Stabilize raw tracker & homography signal once per telemetry load
   const stabilized = useMemo(() => stabilizeTelemetry(telemetry), [telemetry]);

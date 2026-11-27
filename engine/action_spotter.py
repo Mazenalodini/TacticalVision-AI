@@ -50,6 +50,57 @@ EVENT_CATEGORY_MAP: Dict[str, str] = {
     "Ball out of play": "flow",
 }
 
+# Per-class calibrated precision thresholds (prevents celebration/close-up false positives)
+PER_CLASS_THRESHOLDS: Dict[str, float] = {
+    # High-risk rare events prone to close-up / celebration hallucinations
+    "Red card": 0.85,
+    "Yellow->red card": 0.85,
+    "Penalty": 0.80,
+    "Substitution": 0.78,
+    "Yellow card": 0.75,
+    "Offside": 0.72,
+    # Set-pieces & restarts
+    "Ball out of play": 0.70,
+    "Kick-off": 0.70,
+    "Direct free-kick": 0.68,
+    "Indirect free-kick": 0.68,
+    "Foul": 0.68,
+    "Corner": 0.65,
+    "Throw-in": 0.65,
+    "Clearance": 0.65,
+    # Core attacking events
+    "Shots off target": 0.58,
+    "Goal": 0.55,
+    "Shots on target": 0.55,
+}
+
+# Events suppressed when Goal or Shots on target fires within +-5.0s (celebration / replay cut window)
+ATTACK_SUPPRESSED_CLASSES = {
+    "Substitution",
+    "Yellow card",
+    "Red card",
+    "Yellow->red card",
+    "Corner",
+    "Direct free-kick",
+    "Indirect free-kick",
+    "Throw-in",
+    "Kick-off",
+    "Ball out of play",
+}
+
+# Mutually conflicting restart/discipline/sub classes within +-5.0s (keep highest-confidence only)
+MUTUALLY_CONFLICTING_CLASSES = {
+    "Substitution",
+    "Yellow card",
+    "Red card",
+    "Yellow->red card",
+    "Corner",
+    "Direct free-kick",
+    "Indirect free-kick",
+    "Throw-in",
+    "Kick-off",
+}
+
 
 class ActionSpotter:
     """
@@ -76,8 +127,8 @@ class ActionSpotter:
         self.fps: float = 2.0
         self.window_frames: int = 80
         self.stride_frames: int = 40
-        self.default_nms_sec: float = 10.0
-        self.default_min_conf: float = 0.35
+        self.default_nms_sec: float = 15.0
+        self.default_min_conf: float = 0.55
         self.classes: List[str] = list(ACTION_SPOTTING_CLASSES)
 
         preferred_onnx = "action_spotting_v1_int8.onnx"
@@ -92,8 +143,7 @@ class ActionSpotter:
                 self.fps = float(tuning.get("fps", self.fps))
                 self.window_frames = int(tuning.get("window_frames", self.window_frames))
                 self.stride_frames = int(tuning.get("stride_frames", self.stride_frames))
-                self.default_nms_sec = float(tuning.get("nms_window_sec", self.default_nms_sec))
-                self.default_min_conf = float(tuning.get("min_conf", self.default_min_conf))
+                self.default_nms_sec = max(15.0, float(tuning.get("nms_window_sec", self.default_nms_sec)))
             except Exception:
                 pass
 
@@ -299,6 +349,124 @@ class ActionSpotter:
 
         return np.clip(probs_sum / np.maximum(weight_sum, 1e-6), 0.0, 1.0)
 
+    @staticmethod
+    def smooth_probabilities(probs: np.ndarray) -> np.ndarray:
+        """Apply 3-step zero-phase temporal smoothing [0.25, 0.50, 0.25] per class."""
+        arr = np.asarray(probs, dtype=np.float32)
+        if arr.ndim != 2 or arr.shape[0] < 3:
+            return arr.copy()
+        padded = np.pad(arr, ((1, 1), (0, 0)), mode="edge")
+        smoothed = 0.25 * padded[:-2] + 0.50 * padded[1:-1] + 0.25 * padded[2:]
+        return np.clip(smoothed, 0.0, 1.0).astype(np.float32)
+
+    def postprocess_probabilities(
+        self,
+        probs: np.ndarray,
+        half: int = 1,
+        fps: Optional[float] = None,
+        min_conf: Optional[float] = None,
+        nms_window_sec: Optional[float] = None,
+        conflict_window_sec: float = 5.0,
+        use_calibrated_thresholds: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Post-process `(T, 17)` probabilities into high-precision broadcast events:
+          1. 3-step temporal smoothing [0.25, 0.5, 0.25]
+          2. Per-class calibrated thresholds (eliminates celebration/close-up card/sub hallucinations)
+          3. Strict per-class 1D Temporal NMS (default 15.0s)
+          4. Cross-class conflict suppression within +-5.0s
+          5. Realistic density cap (~1 event per 12s, min 3, never dropping a valid Goal)
+        """
+        eff_fps = float(fps or self.fps)
+        eff_nms_sec = float(self.default_nms_sec if nms_window_sec is None else nms_window_sec)
+        floor_conf = float(min_conf) if min_conf is not None else 0.0
+
+        smoothed = self.smooth_probabilities(probs)
+        T, C = smoothed.shape
+        rad = max(1, int(round((eff_nms_sec / 2.0) * eff_fps)))
+        raw_dets: List[Tuple[int, int, float]] = []
+
+        for c in range(C):
+            label = self.classes[c] if c < len(self.classes) else f"Class-{c}"
+            cls_thresh = (
+                max(floor_conf, PER_CLASS_THRESHOLDS.get(label, 0.65))
+                if use_calibrated_thresholds
+                else max(floor_conf, self.default_min_conf)
+            )
+            scores = smoothed[:, c].copy()
+            while True:
+                idx = int(np.argmax(scores))
+                val = float(scores[idx])
+                if val < cls_thresh:
+                    break
+                raw_dets.append((c, idx, val))
+                lo = max(0, idx - rad)
+                hi = min(T, idx + rad + 1)
+                scores[lo:hi] = -1.0
+
+        # Build candidate dicts
+        candidates: List[Dict[str, Any]] = []
+        for cid, f_idx, conf in raw_dets:
+            label = self.classes[cid] if cid < len(self.classes) else f"Class-{cid}"
+            category = EVENT_CATEGORY_MAP.get(label, "tactical")
+            time_s = round(f_idx / eff_fps, 2)
+            mins = int(time_s // 60)
+            secs = int(time_s % 60)
+            candidates.append({
+                "class_id": cid,
+                "label": label,
+                "category": category,
+                "half": int(half),
+                "frame_idx": f_idx,
+                "time_s": time_s,
+                "minute_str": f"{mins:02d}:{secs:02d}",
+                "confidence": round(conf, 4),
+            })
+
+        # Cross-class conflict suppression within +-conflict_window_sec
+        # Priority: Goal first, then Shots on target, then highest confidence
+        def _rank_key(ev: Dict[str, Any]) -> Tuple[int, float]:
+            lbl = ev["label"]
+            prio = 2 if lbl == "Goal" else (1 if lbl == "Shots on target" else 0)
+            return (prio, float(ev["confidence"]))
+
+        ranked = sorted(candidates, key=_rank_key, reverse=True)
+        kept: List[Dict[str, Any]] = []
+        for cand in ranked:
+            suppressed = False
+            c_lbl = cand["label"]
+            c_t = float(cand["time_s"])
+            for existing in kept:
+                if abs(c_t - float(existing["time_s"])) > conflict_window_sec:
+                    continue
+                e_lbl = existing["label"]
+                # Goal or Shots on target suppresses lower-priority cards/subs/restarts in same window
+                if e_lbl in ("Goal", "Shots on target") and c_lbl in ATTACK_SUPPRESSED_CLASSES:
+                    suppressed = True
+                    break
+                # Mutually conflicting cards/subs/restarts cannot co-fire within +-5s
+                if e_lbl in MUTUALLY_CONFLICTING_CLASSES and c_lbl in MUTUALLY_CONFLICTING_CLASSES:
+                    suppressed = True
+                    break
+            if not suppressed:
+                kept.append(cand)
+
+        # Realistic density cap: ~1 event per 12s (minimum 3), never dropping a valid Goal
+        duration_s = T / max(1e-6, eff_fps)
+        max_events = max(3, int(round(duration_s / 12.0)))
+        if len(kept) > max_events:
+            goals = [e for e in kept if e["label"] == "Goal"]
+            others = sorted(
+                [e for e in kept if e["label"] != "Goal"],
+                key=lambda e: float(e["confidence"]),
+                reverse=True,
+            )
+            rem = max(0, max_events - len(goals))
+            kept = goals + others[:rem]
+
+        kept.sort(key=lambda e: (e["frame_idx"], -float(e["confidence"])))
+        return kept
+
     def spot_events(
         self,
         features: np.ndarray,
@@ -306,10 +474,12 @@ class ActionSpotter:
         fps: Optional[float] = None,
         min_conf: Optional[float] = None,
         nms_window_sec: Optional[float] = None,
+        use_calibrated_thresholds: bool = True,
     ) -> Dict[str, Any]:
         """
         End-to-end Model 3 analysis on a `(T, 512)` sequence:
-          - Probability extraction + per-class 1D Temporal NMS
+          - Probability extraction + 3-step temporal smoothing
+          - Per-class calibrated thresholds + per-class 1D Temporal NMS + cross-class suppression
           - 5-minute timeline density bucketing
           - Measured wall-clock `inference_ms`
         """
@@ -321,46 +491,21 @@ class ActionSpotter:
         probs = self.predict_probabilities(features)
         inference_ms = round((time.perf_counter() - t0) * 1000.0, 2)
 
-        T, C = probs.shape
-        rad = max(1, int(round((eff_nms_sec / 2.0) * eff_fps)))
-        raw_dets: List[Tuple[int, int, float]] = []
+        T, _C = probs.shape
+        events = self.postprocess_probabilities(
+            probs,
+            half=half,
+            fps=eff_fps,
+            min_conf=min_conf,
+            nms_window_sec=eff_nms_sec,
+            use_calibrated_thresholds=use_calibrated_thresholds,
+        )
 
-        for c in range(C):
-            scores = probs[:, c].copy()
-            while True:
-                idx = int(np.argmax(scores))
-                val = float(scores[idx])
-                if val < eff_min_conf:
-                    break
-                raw_dets.append((c, idx, val))
-                lo = max(0, idx - rad)
-                hi = min(T, idx + rad + 1)
-                scores[lo:hi] = -1.0
-
-        raw_dets.sort(key=lambda item: (item[1], -item[2]))
-
-        events: List[Dict[str, Any]] = []
         class_counts: Counter = Counter()
         category_counts: Counter = Counter()
-
-        for cid, f_idx, conf in raw_dets:
-            label = self.classes[cid] if cid < len(self.classes) else f"Class-{cid}"
-            category = EVENT_CATEGORY_MAP.get(label, "tactical")
-            time_s = round(f_idx / eff_fps, 2)
-            mins = int(time_s // 60)
-            secs = int(time_s % 60)
-            events.append({
-                "class_id": cid,
-                "label": label,
-                "category": category,
-                "half": int(half),
-                "frame_idx": f_idx,
-                "time_s": time_s,
-                "minute_str": f"{mins:02d}:{secs:02d}",
-                "confidence": round(conf, 4),
-            })
-            class_counts[label] += 1
-            category_counts[category] += 1
+        for ev in events:
+            class_counts[ev["label"]] += 1
+            category_counts[ev["category"]] += 1
 
         duration_s = round(T / eff_fps, 1)
         num_bins = max(1, int(np.ceil(duration_s / 300.0)))

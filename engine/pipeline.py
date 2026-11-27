@@ -128,6 +128,8 @@ class MatchAnalysisPipeline:
         max_total_jersey_samples = 240
         team_crop_counts: Dict[int, int] = defaultdict(int)
         full_crop_counts: Dict[int, int] = defaultdict(int)
+        prev_thumb_hsv: Optional[np.ndarray] = None
+        prev_thumb_gray: Optional[np.ndarray] = None
 
         pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)", mininterval=0.25)
         for f_idx in pbar:
@@ -135,10 +137,27 @@ class MatchAnalysisPipeline:
             if not ok:
                 break
 
+            # Lightweight hard scene-cut detection (HSV histogram L1 + luminance MAD on 96x54 thumb)
+            thumb = cv2.resize(frame, (96, 54), interpolation=cv2.INTER_AREA)
+            cur_hsv = cv2.cvtColor(thumb, cv2.COLOR_BGR2HSV)
+            cur_gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
+            is_scene_cut = False
+            if prev_thumb_hsv is not None and prev_thumb_gray is not None:
+                h_cur = cv2.calcHist([cur_hsv], [0, 2], None, [16, 8], [0, 180, 0, 256]).ravel()
+                h_prev = cv2.calcHist([prev_thumb_hsv], [0, 2], None, [16, 8], [0, 180, 0, 256]).ravel()
+                h_cur = h_cur / max(1e-6, float(h_cur.sum()))
+                h_prev = h_prev / max(1e-6, float(h_prev.sum()))
+                hist_l1 = float(np.sum(np.abs(h_cur - h_prev))) * 0.5
+                mad = float(np.mean(np.abs(cur_gray.astype(np.float32) - prev_thumb_gray.astype(np.float32))))
+                if hist_l1 > 0.45 and mad > 28.0:
+                    is_scene_cut = True
+            prev_thumb_hsv = cur_hsv
+            prev_thumb_gray = cur_gray
+
             if self.cfg.enable_action_spotting and (f_idx % spotting_stride == 0):
                 spotting_frames_bgr.append(cv2.resize(frame, (224, 224), interpolation=cv2.INTER_LINEAR))
 
-            run_pitch = (homography.H is None) or (f_idx % pitch_stride == 0)
+            run_pitch = is_scene_cut or (homography.H is None) or (f_idx % pitch_stride == 0)
             det = self.detector.infer_frame(frame, run_pitch=run_pitch)
             boxes, confs, clss, tids = player_tracker.update(
                 det["person_boxes"], det["person_confs"], det["person_clss"]
@@ -146,13 +165,22 @@ class MatchAnalysisPipeline:
             ball_xy, ball_det_ok = ball_tracker.update(det["ball_boxes"], det["ball_confs"])
             raw_ball_xy.append(ball_xy)
 
+            feet_px = (
+                np.stack([(boxes[:, 0] + boxes[:, 2]) * 0.5, boxes[:, 3]], axis=-1)
+                if len(boxes) > 0
+                else None
+            )
             if run_pitch:
-                homography.update(det["pitch_kpts_xy"], det["pitch_kpts_conf"])
+                homography.update(
+                    det["pitch_kpts_xy"],
+                    det["pitch_kpts_conf"],
+                    player_feet_px=feet_px,
+                    is_scene_cut=is_scene_cut,
+                )
 
             # Project player foot-points (bottom center of bounding box) onto FIFA pitch (meters)
             entities = []
-            if len(boxes) > 0:
-                feet_px = np.stack([(boxes[:, 0] + boxes[:, 2]) * 0.5, boxes[:, 3]], axis=-1)
+            if feet_px is not None:
                 feet_m = homography.image_to_pitch(feet_px)
             else:
                 feet_m = None
@@ -200,6 +228,7 @@ class MatchAnalysisPipeline:
                 "H": homography.H.copy() if homography.H is not None else None,
                 "H_inv": homography.H_inv.copy() if homography.H_inv is not None else None,
                 "ball_detected": ball_det_ok,
+                "homography_reset": bool(is_scene_cut or homography.last_was_reset),
             })
 
         cap.release()
@@ -260,8 +289,9 @@ class MatchAnalysisPipeline:
                             feats_512,
                             half=1,
                             fps=spotting_eff_fps,
-                            min_conf=self.cfg.action_spotting_min_conf,
-                            nms_window_sec=5.0,
+                            min_conf=None,
+                            nms_window_sec=15.0,
+                            use_calibrated_thresholds=True,
                         )
                         clip_dur = round(len(frame_records) / max(1.0, fps), 2)
                         broadcast_events = [

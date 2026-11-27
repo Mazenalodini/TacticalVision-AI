@@ -26,7 +26,7 @@ class StabilizedHomography:
         max_reproj_m: float = 2.5,
         min_span_m: float = 15.0,
         min_convex_hull_area_m2: float = 150.0,
-        temporal_hold_frames: int = 15,
+        temporal_hold_frames: int = 20,
     ):
         self.pitch_cfg = pitch_cfg
         self.pitch_vertices = pitch_cfg.vertices
@@ -43,6 +43,60 @@ class StabilizedHomography:
         self.rejected_updates = 0
         self.reproj_errors_m: list[float] = []
         self._consecutive_failures = 0
+        self._anchor_history: list[float] = []
+        self._anchor_mean_x: Optional[float] = None
+        self.last_was_reset: bool = False
+
+    def reset_scene_cut(self) -> None:
+        """Reset half-pitch anchor and homography state ONLY on a genuine hard scene cut."""
+        self.H = None
+        self.H_inv = None
+        self._consecutive_failures = 0
+        self._anchor_history.clear()
+        self._anchor_mean_x = None
+        self.last_was_reset = True
+
+    def _rotate_180_pitch(self, H_norm: np.ndarray) -> Optional[np.ndarray]:
+        """Compose 180-degree pitch symmetry transform (x'=L-x, y'=W-y) preserving +Jacobian."""
+        L = float(self.pitch_cfg.length)
+        W = float(self.pitch_cfg.width)
+        R_180 = np.array(
+            [[-1.0, 0.0, L], [0.0, -1.0, W], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        H_rot = R_180 @ H_norm.astype(np.float64)
+        if not np.all(np.isfinite(H_rot)) or abs(H_rot[2, 2]) < 1e-8:
+            return None
+        return H_rot / H_rot[2, 2]
+
+    def _project_cloud_stats(
+        self,
+        H_mat: np.ndarray,
+        player_feet_px: Optional[np.ndarray],
+        fallback_x: float,
+    ) -> tuple[float, int]:
+        """Compute (median_x, inbounds_count) for visible players under candidate H."""
+        L = float(self.pitch_cfg.length)
+        W = float(self.pitch_cfg.width)
+        if player_feet_px is None or len(player_feet_px) < 2:
+            inb = 1 if (0.0 <= fallback_x <= L) else 0
+            return float(fallback_x), inb
+
+        pts = np.asarray(player_feet_px, dtype=np.float32).reshape(-1, 1, 2)
+        mapped = cv2.perspectiveTransform(pts, H_mat.astype(np.float64)).reshape(-1, 2)
+        finite = np.all(np.isfinite(mapped), axis=1)
+        if not np.any(finite):
+            return float(fallback_x), 0
+        m_fin = mapped[finite]
+        inb_mask = (
+            (m_fin[:, 0] >= -2.0)
+            & (m_fin[:, 0] <= L + 2.0)
+            & (m_fin[:, 1] >= -2.0)
+            & (m_fin[:, 1] <= W + 2.0)
+        )
+        inb_count = int(np.sum(inb_mask))
+        ref_xs = m_fin[inb_mask, 0] if inb_count >= 2 else np.clip(m_fin[:, 0], -10.0, L + 10.0)
+        return float(np.median(ref_xs)), inb_count
 
     # Tier-2 relaxed thresholds for zoomed/corner/penalty-box angles
     _T2_KPT_CONF = 0.25
@@ -64,6 +118,8 @@ class StabilizedHomography:
         min_span: float,
         min_hull: float,
         max_reproj: float,
+        player_feet_px: Optional[np.ndarray] = None,
+        is_scene_cut: bool = False,
     ) -> bool:
         """Core homography fitting with Jacobian orientation and horizon-fold validation."""
         valid_xy = (kpts_xy[:, 0] > 2.0) & (kpts_xy[:, 1] > 2.0)
@@ -149,6 +205,23 @@ class StabilizedHomography:
             return False
         H_norm = H_pos / H_pos[2, 2]
 
+        # Half-Pitch Symmetry Lock: prevent 180-deg penalty-box flips during continuous pan/zoom
+        fallback_x = float(np.median(inl_dst[:, 0]))
+        cand_mean_x, cand_inb = self._project_cloud_stats(H_norm, player_feet_px, fallback_x)
+        if not is_scene_cut and self._anchor_mean_x is not None:
+            if abs(cand_mean_x - self._anchor_mean_x) > 32.0:
+                H_rot = self._rotate_180_pitch(H_norm)
+                if H_rot is not None:
+                    rot_fallback_x = float(self.pitch_cfg.length) - fallback_x
+                    rot_mean_x, rot_inb = self._project_cloud_stats(H_rot, player_feet_px, rot_fallback_x)
+                    if abs(rot_mean_x - self._anchor_mean_x) < 18.0 and rot_inb >= cand_inb:
+                        H_norm = H_rot
+                        cand_mean_x = rot_mean_x
+                    else:
+                        return False
+                else:
+                    return False
+
         try:
             H_inv_cand = np.linalg.inv(H_norm)
         except np.linalg.LinAlgError:
@@ -169,12 +242,28 @@ class StabilizedHomography:
             self.H = H_norm
             self.H_inv = H_inv_cand
 
+        self._anchor_history.append(cand_mean_x)
+        if len(self._anchor_history) > 10:
+            self._anchor_history.pop(0)
+        self._anchor_mean_x = float(np.median(self._anchor_history))
+        self.last_was_reset = False
+
         self.valid_updates += 1
         self.reproj_errors_m.append(err_m)
         return True
 
-    def update(self, kpts_xy: np.ndarray, kpts_conf: np.ndarray) -> bool:
+    def update(
+        self,
+        kpts_xy: np.ndarray,
+        kpts_conf: np.ndarray,
+        player_feet_px: Optional[np.ndarray] = None,
+        is_scene_cut: bool = False,
+    ) -> bool:
         """Try Tier-1 (wide), Tier-1.5 (sparse midfield), then Tier-2 (corner/zoom). Hold briefly on loss."""
+        self.last_was_reset = False
+        if is_scene_cut:
+            self.reset_scene_cut()
+
         ok = self._update_core(
             kpts_xy,
             kpts_conf,
@@ -185,6 +274,8 @@ class StabilizedHomography:
             min_span=self.min_span_m,
             min_hull=self.min_convex_hull_area_m2,
             max_reproj=self.max_reproj_m,
+            player_feet_px=player_feet_px,
+            is_scene_cut=is_scene_cut,
         )
         if not ok:
             ok = self._update_core(
@@ -197,6 +288,8 @@ class StabilizedHomography:
                 min_span=self.min_span_m,
                 min_hull=self.min_convex_hull_area_m2,
                 max_reproj=self.max_reproj_m,
+                player_feet_px=player_feet_px,
+                is_scene_cut=is_scene_cut,
             )
         if not ok:
             ok = self._update_core(
@@ -209,6 +302,8 @@ class StabilizedHomography:
                 min_span=self._T2_MIN_SPAN_M,
                 min_hull=self._T2_MIN_HULL_M2,
                 max_reproj=self._T2_MAX_REPROJ_M,
+                player_feet_px=player_feet_px,
+                is_scene_cut=is_scene_cut,
             )
 
         if ok:
@@ -218,9 +313,10 @@ class StabilizedHomography:
         self._consecutive_failures += 1
         self.rejected_updates += 1
         if self._consecutive_failures > self.temporal_hold_frames and self.H is not None:
-            # Hard scene cut / replay transition -> clear stale H
+            # Sustained loss (close-up / replay) -> clear stale H
             self.H = None
             self.H_inv = None
+            self.last_was_reset = True
         return self.H is not None
 
     def image_to_pitch(self, pts_xy: np.ndarray) -> Optional[np.ndarray]:

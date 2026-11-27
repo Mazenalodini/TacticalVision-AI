@@ -97,14 +97,132 @@ export function usePlayerOverrides(matchId?: string) {
 }
 
 export interface ResolvedIdentity {
-  /** Strictly `#jn` when verified/overridden, else honest ByteTrack fallback `T{id}`. */
+  /** Strictly `#jn` when verified/overridden, else compact display fallback `T{1..99}`. */
   badgeText: string;
-  /** Compact canvas label without `#` clutter when drawn inside 20px circles. */
+  /** Compact canvas label (strictly 1..99 digits, never >99 raw tracker clutter). */
   canvasLabel: string;
   isVerified: boolean;
   isCoachOverride: boolean;
   jerseyNumber: number | null;
   customName: string | null;
+}
+
+// Per-match deterministic collision-free squad slot cache for unverified track IDs > 99
+const _matchSquadMaps = new Map<string, Map<number, number>>();
+let _activeSquadMatchId: string | null = null;
+
+interface SquadSyncTelemetryLike {
+  players?: Array<{
+    track_id: number;
+    team: number;
+    jersey_number?: number | null;
+    jersey_verified?: boolean | null;
+  }>;
+  frames?: Array<{
+    players?: Array<{
+      id: number;
+      team: number;
+      role?: string;
+      jn?: number | null;
+      jv?: boolean | null;
+    }>;
+  }>;
+}
+
+/**
+ * Deterministically maps any unverified raw ByteTrack ID > 99 into a clean collision-free
+ * football squad slot in [1..99] per match+team, avoiding verified jersey numbers and active
+ * teammates so 2D Radar, Pass Network, Spotlight, and Leaderboard stay 100% consistent.
+ */
+export function syncMatchSquadNumbers(
+  matchId: string | undefined,
+  telemetry: SquadSyncTelemetryLike | null | undefined,
+  overrides?: MatchOverridesMap
+): Map<number, number> {
+  const key = matchId || "__default__";
+  const slotMap = new Map<number, number>();
+  if (!telemetry) {
+    _matchSquadMaps.set(key, slotMap);
+    _activeSquadMatchId = key;
+    return slotMap;
+  }
+
+  const usedByTeam: Record<number, Set<number>> = { 0: new Set(), 1: new Set() };
+  const over99ByTeam: Record<number, Set<number>> = { 0: new Set(), 1: new Set() };
+
+  const registerEntity = (
+    tid: number,
+    team: number,
+    jv?: boolean | null,
+    jn?: number | null
+  ) => {
+    const tm = team === 1 ? 1 : 0;
+    const ov = overrides?.[tid];
+    const ovNum =
+      ov?.jersey_number != null && ov.jersey_number >= 1 && ov.jersey_number <= 99
+        ? ov.jersey_number
+        : null;
+    if (ovNum !== null) {
+      usedByTeam[tm].add(ovNum);
+      return;
+    }
+    if (jv && jn != null && jn >= 1 && jn <= 99) {
+      usedByTeam[tm].add(jn);
+      return;
+    }
+    if (tid >= 1 && tid <= 99) {
+      usedByTeam[tm].add(tid);
+      slotMap.set(tid, tid);
+    } else if (tid > 99) {
+      over99ByTeam[tm].add(tid);
+    }
+  };
+
+  for (const p of telemetry.players || []) {
+    registerEntity(p.track_id, p.team, p.jersey_verified, p.jersey_number);
+  }
+  for (const fr of telemetry.frames || []) {
+    for (const fp of fr.players || []) {
+      if (fp.role === "referee") continue;
+      registerEntity(fp.id, fp.team, fp.jv, fp.jn);
+    }
+  }
+
+  for (const tm of [0, 1] as const) {
+    const used = usedByTeam[tm];
+    const sortedHigh = Array.from(over99ByTeam[tm]).sort((a, b) => a - b);
+    for (const tid of sortedHigh) {
+      // Prefer a deterministic unused slot in 1..99 starting from (tid % 99) + 1
+      const pref = ((tid - 1) % 99) + 1;
+      let chosen = pref;
+      if (used.has(chosen)) {
+        for (let offset = 1; offset < 99; offset++) {
+          const cand = ((pref - 1 + offset) % 99) + 1;
+          if (!used.has(cand)) {
+            chosen = cand;
+            break;
+          }
+        }
+      }
+      used.add(chosen);
+      slotMap.set(tid, chosen);
+    }
+  }
+
+  _matchSquadMaps.set(key, slotMap);
+  _activeSquadMatchId = key;
+  return slotMap;
+}
+
+export function resolveCompactTrackNumber(
+  trackId: number,
+  matchId?: string
+): number {
+  if (trackId >= 1 && trackId <= 99) return trackId;
+  const key = matchId || _activeSquadMatchId || "__default__";
+  const mapped = _matchSquadMaps.get(key)?.get(trackId);
+  if (mapped != null && mapped >= 1 && mapped <= 99) return mapped;
+  return ((Math.max(1, Math.abs(Math.round(trackId))) - 1) % 99) + 1;
 }
 
 export function resolvePlayerIdentity(
@@ -115,7 +233,8 @@ export function resolvePlayerIdentity(
     jv?: boolean | null;
     jn?: number | null;
   } | null,
-  overrides?: MatchOverridesMap
+  overrides?: MatchOverridesMap,
+  matchId?: string
 ): ResolvedIdentity {
   const ov = overrides?.[trackId];
   const ovNum =
@@ -138,7 +257,7 @@ export function resolvePlayerIdentity(
   const modelVerified = Boolean(source?.jersey_verified || source?.jv);
   const modelNum = source?.jersey_number ?? source?.jn ?? null;
 
-  if (modelVerified && modelNum != null) {
+  if (modelVerified && modelNum != null && modelNum >= 1 && modelNum <= 99) {
     return {
       badgeText: `#${modelNum}`,
       canvasLabel: `${modelNum}`,
@@ -149,9 +268,10 @@ export function resolvePlayerIdentity(
     };
   }
 
+  const compactNum = resolveCompactTrackNumber(trackId, matchId);
   return {
-    badgeText: `T${trackId}`,
-    canvasLabel: `${trackId}`,
+    badgeText: `T${compactNum}`,
+    canvasLabel: `${compactNum}`,
     isVerified: false,
     isCoachOverride: Boolean(customName),
     jerseyNumber: null,

@@ -10,7 +10,11 @@ import {
   selectPassNetworkNodes,
   type PassNetworkNode,
 } from "@/lib/telemetryHelpers";
-import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
+import {
+  resolvePlayerIdentity,
+  syncMatchSquadNumbers,
+  usePlayerOverrides,
+} from "@/lib/jerseyOverrides";
 import { formatTeamName, formatRole } from "@/lib/format";
 import { BidiNum } from "@/components/ui/BidiNum";
 
@@ -131,6 +135,7 @@ export function D3PassNetworkPitch({
       : null;
 
   const { playersList, computedArcs, connectionCountMap } = useMemo(() => {
+    syncMatchSquadNumbers(matchId, telemetry, overrides);
     const { nodes, nodeMap, filteredEdges } = selectPassNetworkNodes(
       telemetry,
       teamFilter

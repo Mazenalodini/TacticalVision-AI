@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from backend.services.job_runner import JobRunner
+from engine.action_spotter import ACTION_SPOTTING_CLASSES, PER_CLASS_THRESHOLDS, ActionSpotter
 from engine.config import EngineConfig, FIFAPitchConfig
 from engine.homography import StabilizedHomography
 from engine.jersey_recognizer import JerseyRecognizer, extract_jersey_digits
@@ -166,3 +167,144 @@ def test_rapidocr_rec_only_reads_clean_23_offline():
     res = jr.recognize_tracklet([crop, crop.copy()])
     assert res["jersey_verified"] is True
     assert res["jersey_number"] == 23
+
+
+def test_model3_calibrated_thresholds_and_cross_class_suppression():
+    """Calibration 1: Per-class thresholds + 3-step smoothing + cross-class suppression keeps Goal and drops fake cards/subs."""
+    spotter = ActionSpotter()
+    T = 140  # 70s @ 2fps
+    probs = np.zeros((T, len(ACTION_SPOTTING_CLASSES)), dtype=np.float32)
+
+    idx_goal = ACTION_SPOTTING_CLASSES.index("Goal")
+    idx_red = ACTION_SPOTTING_CLASSES.index("Red card")
+    idx_sub = ACTION_SPOTTING_CLASSES.index("Substitution")
+    idx_yellow = ACTION_SPOTTING_CLASSES.index("Yellow card")
+
+    # Sustained Goal peak around t=22.0s (frames 43..45) with conf=0.64 >= 0.55
+    probs[43:46, idx_goal] = 0.64
+
+    # Simultaneous celebration hallucination: Red card 0.88 (above 0.85!) and Substitution 0.82 (above 0.78!)
+    # within +-5s of Goal -> MUST be suppressed by Goal cross-class conflict rule!
+    probs[45:48, idx_red] = 0.88
+    probs[47:50, idx_sub] = 0.82
+
+    # Sub-threshold Yellow card at t=50s (0.70 < 0.75) -> MUST be filtered by per-class threshold
+    probs[99:102, idx_yellow] = 0.70
+
+    # Single-frame isolated Goal spike at t=60s (0.70 for 1 frame -> smoothed to 0.35 < 0.55) -> MUST be rejected!
+    probs[120, idx_goal] = 0.70
+
+    events = spotter.postprocess_probabilities(probs, half=1, fps=2.0, nms_window_sec=15.0)
+    labels = [e["label"] for e in events]
+    assert labels == ["Goal"], f"Expected only ['Goal'], got {events}"
+    assert 21.0 <= events[0]["time_s"] <= 23.0
+    assert PER_CLASS_THRESHOLDS["Red card"] >= 0.85
+    assert PER_CLASS_THRESHOLDS["Substitution"] >= 0.78
+
+
+def test_half_pitch_symmetry_lock_prevents_180_flip():
+    """Calibration 2: Half-pitch symmetry lock prevents 180-deg penalty-box flip during continuous zoom."""
+    pitch = FIFAPitchConfig()
+    hom = StabilizedHomography(pitch, temporal_hold_frames=20)
+
+    # Right penalty-box landmarks (x in [88.5..105], mean_x ~ 97m)
+    right_ids = [17, 20, 21, 22, 23, 27]
+    # Exact 180-deg symmetric left penalty-box landmarks (x in [0..16.5], mean_x ~ 8m)
+    # 17(88.5,13.84)<->12(16.5,54.16), 20(88.5,54.16)<->9(16.5,13.84), 21(94,34)<->8(11,34),
+    # 22(99.5,24.84)<->7(5.5,43.16), 23(99.5,43.16)<->6(5.5,24.84), 27(105,43.16)<->2(0,24.84)
+    left_ids = [12, 9, 8, 7, 6, 2]
+
+    src_px = np.array([
+        [320.0, 240.0],
+        [360.0, 580.0],
+        [540.0, 400.0],
+        [720.0, 320.0],
+        [750.0, 510.0],
+        [960.0, 490.0],
+    ], dtype=np.float32)
+
+    player_feet = np.array([
+        [500.0, 380.0],
+        [620.0, 420.0],
+        [700.0, 460.0],
+        [810.0, 410.0],
+    ], dtype=np.float32)
+
+    # Frame 1: lock onto right penalty box
+    kpts_r = np.zeros((32, 2), dtype=np.float32)
+    conf_r = np.zeros((32,), dtype=np.float32)
+    kpts_r[right_ids] = src_px
+    conf_r[right_ids] = 0.85
+    assert hom.update(kpts_r, conf_r, player_feet_px=player_feet, is_scene_cut=False) is True
+    mapped_before = hom.image_to_pitch(player_feet)
+    assert mapped_before is not None and float(np.median(mapped_before[:, 0])) > 80.0
+
+    # Frame 2: pitch_best.pt mislabels the exact same pixels as LEFT penalty box (180-deg flip!)
+    kpts_l = np.zeros((32, 2), dtype=np.float32)
+    conf_l = np.zeros((32,), dtype=np.float32)
+    kpts_l[left_ids] = src_px
+    conf_l[left_ids] = 0.85
+    assert hom.update(kpts_l, conf_l, player_feet_px=player_feet, is_scene_cut=False) is True
+    mapped_after = hom.image_to_pitch(player_feet)
+    assert mapped_after is not None
+    # Symmetry lock MUST keep players on the right half (> 80m), NEVER flipped to left half (< 25m)!
+    assert float(np.median(mapped_after[:, 0])) > 80.0
+
+
+def test_sprint_gate_rejects_homography_spikes_and_requires_sustained_speed():
+    """Calibration 3: Single-frame > 11.5 m/s spikes and < 0.8s bursts yield 0 sprints; >= 0.8s run yields 1."""
+    cfg = EngineConfig(players_model_path="", pitch_model_path="", enable_siglip=False, enable_jersey_ocr=False)
+    pitch = FIFAPitchConfig()
+    fps = 15.0
+    eng = TacticalAnalyticsEngine(cfg, pitch, fps=fps)
+
+    # Build 120 frames (8.0s @ 15fps) with valid H
+    H_id = np.eye(3, dtype=np.float32)
+    frame_records = []
+    # Track 1: jogging slowly (2 m/s), then suffers a 1-frame 15 m/s homography teleport glitch at f=30
+    # Track 2: short 0.4s burst (6 frames) at 8.5 m/s -> below 0.8s threshold (0 sprints!)
+    # Track 3: genuine sustained 8.0 m/s (28.8 km/h) sprint from f=25..50 (1.67s), brief dip, second sprint within 2s (cooldown!)
+    x1, x2, x3 = 20.0, 20.0, 15.0
+    for f in range(120):
+        if f == 30:
+            x1 += 1.5  # 1.5m in 1/15s = 22.5 m/s glitch!
+        elif f == 31:
+            x1 -= 1.4
+        else:
+            x1 += 2.0 / fps
+
+        if 40 <= f < 46:
+            x2 += 8.5 / fps  # 0.4s burst only
+        else:
+            x2 += 1.5 / fps
+
+        if 25 <= f <= 52:
+            x3 += 8.2 / fps  # sustained 1.8s sprint at 29.5 km/h
+        elif 65 <= f <= 85:
+            x3 += 8.2 / fps  # within 4s cooldown of first sprint trigger!
+        else:
+            x3 += 1.0 / fps
+
+        frame_records.append({
+            "frame_idx": f,
+            "H": H_id,
+            "H_inv": H_id,
+            "homography_reset": False,
+            "ball_detected": False,
+            "ball_xy": None,
+            "ball_pitch_xy": None,
+            "entities": [
+                {"track_id": 1, "cls": cfg.player_id, "team": 0, "conf": 0.9, "box": np.array([10, 10, 30, 60], np.float32), "pitch_xy": np.array([x1, 20.0], np.float32)},
+                {"track_id": 2, "cls": cfg.player_id, "team": 0, "conf": 0.9, "box": np.array([10, 10, 30, 60], np.float32), "pitch_xy": np.array([x2, 34.0], np.float32)},
+                {"track_id": 3, "cls": cfg.player_id, "team": 1, "conf": 0.9, "box": np.array([10, 10, 30, 60], np.float32), "pitch_xy": np.array([x3, 48.0], np.float32)},
+            ],
+        })
+
+    tel = eng.analyze(frame_records)
+    sprints = [e for e in tel["events"] if e["type"] == "sprint"]
+    by_tid = {p["track_id"]: p["sprints"] for p in tel["players"]}
+
+    assert by_tid[1] == 0, f"Homography spike track 1 falsely logged sprints: {sprints}"
+    assert by_tid[2] == 0, f"Short 0.4s burst track 2 falsely logged sprints: {sprints}"
+    assert by_tid[3] == 1, f"Expected exactly 1 sprint for track 3 (cooldown respected), got {by_tid[3]}: {sprints}"
+
