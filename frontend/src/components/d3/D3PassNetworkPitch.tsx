@@ -481,7 +481,7 @@ export function D3PassNetworkPitch({
             />
           </g>
 
-          {/* Animated Curved Quadratic Bezier Pass Corridors */}
+          {/* Calm, Static Curved Quadratic Bezier Pass Corridors */}
           {computedArcs.map((arc) => {
             const isConnected =
               hoveredPlayerId === null ||
@@ -509,16 +509,19 @@ export function D3PassNetworkPitch({
                 ? "url(#d3-arrow-cyan)"
                 : "url(#d3-arrow-coral)";
 
-            const arcPathId = `d3-arc-${arc.key}`;
             const computedOpacity = dimForReplay
               ? 0.14
               : dimForProg
               ? 0.18
               : hoveredPlayerId === null
-              ? 0.9
+              ? 0.88
               : isConnected
               ? 1
               : 0.14;
+
+            const xtBoost = Math.min(1.1, Math.max(0, arc.xtDelta * 22));
+            const finalStrokeW =
+              (isReplayMatch ? arc.strokeW + 1.6 : arc.strokeW) + xtBoost;
 
             return (
               <g
@@ -532,31 +535,14 @@ export function D3PassNetworkPitch({
                 className="transition-opacity duration-200 cursor-pointer"
               >
                 <path
-                  id={arcPathId}
                   d={arc.pathD}
                   fill="none"
                   stroke={strokeColor}
-                  strokeWidth={isReplayMatch ? arc.strokeW + 1.8 : arc.strokeW}
-                  strokeOpacity={0.55}
+                  strokeWidth={finalStrokeW}
+                  strokeOpacity={isReplayMatch || (hoveredPlayerId !== null && isConnected) ? 0.96 : 0.78}
                   strokeLinecap="round"
                   markerEnd={markerId}
                 />
-                <path
-                  d={arc.pathD}
-                  fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={Math.max(1.8, arc.strokeW * 0.72)}
-                  strokeLinecap="round"
-                  className="tv-pass-flow-line"
-                />
-                <circle r={isReplayMatch ? 4.2 : 2.7} fill="#FFFFFF" opacity={0.95}>
-                  <animateMotion
-                    dur={isReplayMatch ? "1.1s" : `${Math.max(1.4, 2.8 - arc.edge.count * 0.25).toFixed(2)}s`}
-                    repeatCount="indefinite"
-                  >
-                    <mpath href={`#${arcPathId}`} />
-                  </animateMotion>
-                </circle>
                 {(isReplayMatch || (hoveredPlayerId !== null && isConnected)) &&
                   arc.edge.count >= 1 && (
                     <g transform={`translate(${arc.midX - 13}, ${arc.midY - 8})`}>
@@ -585,7 +571,7 @@ export function D3PassNetworkPitch({
             );
           })}
 
-          {/* De-Overlapped Player Nodes with Honest `#jn` vs `T#` Identity */}
+          {/* De-Overlapped Player Nodes with Centered Numeric Labels */}
           {playersList.map(({ node, identity, cx, cy, r }) => {
             const isTeam0 = node.team === 0;
             const color = isTeam0 ? "#38BDF8" : "#FB7185";
@@ -601,6 +587,9 @@ export function D3PassNetworkPitch({
                   (a.edge.to_id === hoveredPlayerId &&
                     a.edge.from_id === node.track_id)
               );
+
+            const label = identity.canvasLabel;
+            const labelFontSize = label.length >= 3 ? "8.5" : "10";
 
             return (
               <g
@@ -622,13 +611,23 @@ export function D3PassNetworkPitch({
                     strokeDasharray="3 2"
                   />
                 )}
+                {identity.isVerified && (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={isHov ? r + 4.2 : r + 2.2}
+                    fill="none"
+                    stroke={identity.isCoachOverride ? "#FBBF24" : "rgba(52, 211, 153, 0.82)"}
+                    strokeWidth="1.2"
+                  />
+                )}
                 <circle
                   cx={cx}
                   cy={cy}
                   r={isHov ? r + 2.5 : r}
                   fill="#060912"
                   stroke={color}
-                  strokeWidth={isHov ? 3 : node.isParticipant ? 2.4 : 1.7}
+                  strokeWidth={isHov ? 3 : node.isParticipant ? 2.4 : 1.8}
                 />
                 {identity.isVerified && (
                   <circle
@@ -640,17 +639,18 @@ export function D3PassNetworkPitch({
                     strokeWidth={1}
                   />
                 )}
-                {identity.canvasLabel && (
+                {label && (
                   <text
                     x={cx}
-                    y={cy + 3.5}
+                    y={cy}
                     textAnchor="middle"
-                    fill="#FFFFFF"
-                    fontSize="9.5"
-                    fontFamily="monospace"
-                    fontWeight="bold"
+                    dominantBaseline="central"
+                    fill={identity.isVerified ? "#FFFFFF" : "#E2E8F0"}
+                    fontSize={labelFontSize}
+                    fontFamily="var(--font-jetbrains), monospace"
+                    fontWeight={identity.isVerified ? "800" : "700"}
                   >
-                    {identity.canvasLabel}
+                    {label}
                   </text>
                 )}
               </g>

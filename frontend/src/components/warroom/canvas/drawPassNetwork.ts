@@ -4,8 +4,8 @@ import { resolvePlayerIdentity, type MatchOverridesMap } from "@/lib/jerseyOverr
 import { PitchViewport, pitchToCanvas } from "./pitchConfig";
 
 /**
- * Draws animated directed passing corridors on the 2D PitchCanvas without dropping short-clip players.
- * Renders glowing directional pulses moving strictly from passer -> receiver along quadratic curves.
+ * Draws calm, static directed passing corridors on the 2D PitchCanvas without dropping short-clip players.
+ * Renders clean curved links scaled by pass count with crisp static directional arrowheads.
  */
 export function drawPassNetwork(
   ctx: CanvasRenderingContext2D,
@@ -18,11 +18,11 @@ export function drawPassNetwork(
   if (!edges || edges.length === 0) return;
 
   const playerMap = resolvePlayerPositions(telemetry);
-  const nowSec = performance.now() * 0.001;
 
-  // 1. Draw Directed Curved Corridors + Animated Directional Pulses
+  // 1. Draw Static Directed Curved Corridors
   ctx.save();
-  edges.forEach((edge, idx) => {
+  ctx.lineCap = "round";
+  edges.forEach((edge) => {
     const fromP = playerMap.get(edge.from_id);
     const toP = playerMap.get(edge.to_id);
     if (!fromP || !toP) return;
@@ -44,31 +44,21 @@ export function drawPassNetwork(
 
     const isTeam0 = edge.team === 0;
     const color = isTeam0 ? "#38BDF8" : "#FB7185";
-    const alpha = Math.min(0.86, 0.36 + edge.count * 0.14);
+    const alpha = Math.min(0.88, 0.42 + edge.count * 0.14);
 
     ctx.strokeStyle = isTeam0
       ? `rgba(56, 189, 248, ${alpha})`
       : `rgba(251, 113, 133, ${alpha})`;
-    ctx.lineWidth = Math.min(4.8, Math.max(1.5, edge.count * 1.35));
+    ctx.lineWidth = Math.min(4.8, Math.max(1.6, edge.count * 1.35));
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.quadraticCurveTo(ctrlX, ctrlY, x2, y2);
     ctx.stroke();
 
-    // Animated directional light pulse sliding passer -> receiver along quadratic Bezier
-    const tPulse = (nowSec * 0.68 + idx * 0.23) % 1;
-    const omt = 1 - tPulse;
-    const px = omt * omt * x1 + 2 * omt * tPulse * ctrlX + tPulse * tPulse * x2;
-    const py = omt * omt * y1 + 2 * omt * tPulse * ctrlY + tPulse * tPulse * y2;
-    ctx.beginPath();
-    ctx.arc(px, py, 3.0, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fill();
-
-    // Arrowhead near target anchor
+    // Static directional arrowhead near target anchor
     const angle = Math.atan2(y2 - ctrlY, x2 - ctrlX);
-    const arrowDist = showLivePlayers ? 10 : 14;
+    const arrowDist = showLivePlayers ? 11 : 14;
     const ax = x2 - arrowDist * Math.cos(angle);
     const ay = y2 - arrowDist * Math.sin(angle);
     const headLen = Math.min(9.5, 6 + edge.count);
@@ -120,22 +110,41 @@ export function drawPassNetwork(
       ctx.setLineDash([2, 2]);
       ctx.stroke();
     } else {
+      const nodeR = 11;
       ctx.beginPath();
-      ctx.arc(nx, ny, 10.5, 0, Math.PI * 2);
+      ctx.arc(nx, ny, nodeR, 0, Math.PI * 2);
       ctx.fillStyle = "#080D18";
       ctx.fill();
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
+      if (identity.isVerified) {
+        ctx.beginPath();
+        ctx.arc(nx, ny, nodeR + 1.6, 0, Math.PI * 2);
+        ctx.strokeStyle = identity.isCoachOverride
+          ? "#FBBF24"
+          : "rgba(52, 211, 153, 0.85)";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(nx + nodeR * 0.74, ny - nodeR * 0.74, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = identity.isCoachOverride ? "#FBBF24" : "#34D399";
+        ctx.fill();
+        ctx.strokeStyle = "#080D18";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+
       if (identity.canvasLabel) {
-        ctx.fillStyle = identity.isVerified ? "#FFFFFF" : "rgba(226,232,240,0.85)";
-        ctx.font = identity.isVerified
-          ? "bold 8.8px var(--font-jetbrains), monospace"
-          : "600 7.8px var(--font-jetbrains), monospace";
+        const label = identity.canvasLabel;
+        const fontSize = label.length >= 3 ? 7.6 : 9.0;
+        ctx.fillStyle = identity.isVerified ? "#FFFFFF" : "#E2E8F0";
+        ctx.font = `${identity.isVerified ? 800 : 700} ${fontSize}px var(--font-jetbrains), monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(identity.canvasLabel, nx, ny);
+        ctx.fillText(label, nx, ny + 0.5);
       }
     }
     ctx.restore();

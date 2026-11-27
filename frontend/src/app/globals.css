@@ -147,21 +147,6 @@ html[dir="rtl"] *:not([dir="ltr"]):not(.font-mono) {
   background: rgba(148, 163, 184, 0.35);
 }
 
-/* Directional glowing pass flow dash animation */
-@keyframes tv-pass-flow {
-  from {
-    stroke-dashoffset: 24;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.tv-pass-flow-line {
-  stroke-dasharray: 4 8;
-  animation: tv-pass-flow 1.35s linear infinite;
-}
-
 /* ── Print / PDF Executive Report Styles ── */
 @media print {
   html,

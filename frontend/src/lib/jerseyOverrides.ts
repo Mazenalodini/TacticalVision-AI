@@ -127,7 +127,7 @@ export function resolvePlayerIdentity(
   if (ovNum !== null) {
     return {
       badgeText: `#${ovNum}`,
-      canvasLabel: `#${ovNum}`,
+      canvasLabel: `${ovNum}`,
       isVerified: true,
       isCoachOverride: true,
       jerseyNumber: ovNum,
@@ -141,7 +141,7 @@ export function resolvePlayerIdentity(
   if (modelVerified && modelNum != null) {
     return {
       badgeText: `#${modelNum}`,
-      canvasLabel: `#${modelNum}`,
+      canvasLabel: `${modelNum}`,
       isVerified: true,
       isCoachOverride: false,
       jerseyNumber: modelNum,
@@ -151,7 +151,7 @@ export function resolvePlayerIdentity(
 
   return {
     badgeText: `T${trackId}`,
-    canvasLabel: "",
+    canvasLabel: `${trackId}`,
     isVerified: false,
     isCoachOverride: Boolean(customName),
     jerseyNumber: null,

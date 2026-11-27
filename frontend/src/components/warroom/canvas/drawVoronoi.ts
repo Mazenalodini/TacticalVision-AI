@@ -36,6 +36,7 @@ export class VoronoiBuffer {
 
     const validPlayers = players.filter(
       (p) =>
+        p.role !== "referee" &&
         Number.isFinite(p.x) &&
         Number.isFinite(p.y) &&
         p.x >= -0.5 &&

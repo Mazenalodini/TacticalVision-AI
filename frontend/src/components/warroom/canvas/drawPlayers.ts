@@ -209,13 +209,26 @@ export function drawPlayers(
     }
 
     // Soft studio drop shadow
-    const baseRadius = isGK ? 10.5 : 9.5;
+    const baseRadius = isReferee ? 8.5 : isGK ? 10.8 : 10.0;
     const radius = isSelected || isHovered ? baseRadius + 1.2 : baseRadius;
 
     ctx.beginPath();
-    ctx.arc(cx, cy + 1.5, radius + 1.5, 0, Math.PI * 2);
+    ctx.arc(cx, cy + 1.5, radius + 1.4, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(2, 6, 12, 0.55)";
     ctx.fill();
+
+    // Referees ONLY: crisp yellow ring (#FACC15) with NO number
+    if (isReferee) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(6, 11, 16, 0.88)";
+      ctx.fill();
+      ctx.strokeStyle = "#FACC15";
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
 
     if (isGK) {
       ctx.beginPath();
@@ -240,23 +253,17 @@ export function drawPlayers(
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // Honest Identity: `#jn ✓` when Model 4 or Coach verified, else clean dot (no fake T#)
+    // Resolved Identity: verified jersey number (accented) or clean numeric track ID
     const identity = resolvePlayerIdentity(player.id, player, overrides);
-
-    // Referees: yellow dot, zero text
-    if (isReferee) {
-      ctx.restore();
-      continue;
-    }
 
     if (identity.isVerified) {
       ctx.beginPath();
       ctx.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
-      ctx.strokeStyle = identity.isCoachOverride ? "#FBBF24" : "rgba(52, 211, 153, 0.85)";
-      ctx.lineWidth = 1.35;
+      ctx.strokeStyle = identity.isCoachOverride ? "#FBBF24" : "rgba(52, 211, 153, 0.88)";
+      ctx.lineWidth = 1.4;
       ctx.stroke();
 
-      // Tiny verified emerald/gold badge pip at top-right shoulder
+      // Micro verified emerald/gold badge pip at top-right shoulder
       const bx = cx + radius * 0.76;
       const by = cy - radius * 0.76;
       ctx.beginPath();
@@ -268,17 +275,15 @@ export function drawPlayers(
       ctx.stroke();
     }
 
-    // Razor-sharp Verified Jersey Label only — unverified players render clean dots
+    // Crisp centered numeric label inside every player circle
     if (identity.canvasLabel) {
-      ctx.fillStyle = isTeam0
-        ? (identity.isVerified ? "#04101A" : "rgba(4, 16, 26, 0.78)")
-        : (identity.isVerified ? "#FFFFFF" : "rgba(255, 255, 255, 0.82)");
-      ctx.font = identity.isVerified
-        ? "bold 8.8px var(--font-jetbrains), monospace"
-        : "600 7.6px var(--font-jetbrains), monospace";
+      const label = identity.canvasLabel;
+      const fontSize = label.length >= 3 ? 7.6 : identity.isVerified ? 9.4 : 9.0;
+      ctx.fillStyle = isTeam0 ? "#04101A" : "#FFFFFF";
+      ctx.font = `${identity.isVerified ? 800 : 700} ${fontSize}px var(--font-jetbrains), monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(identity.canvasLabel, cx, cy + 0.5);
+      ctx.fillText(label, cx, cy + 0.5);
     }
 
     ctx.restore();

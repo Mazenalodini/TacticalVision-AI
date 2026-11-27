@@ -187,7 +187,8 @@ export function PitchCanvas({
 
             const def0 = interpFrame.def_x["0"] ?? null;
             const def1 = interpFrame.def_x["1"] ?? null;
-            const sprinting = interpFrame.players.filter((p) => p.spd >= 24.0).length;
+            const activeFieldPlayers = interpFrame.players.filter((p) => p.role !== "referee");
+            const sprinting = activeFieldPlayers.filter((p) => p.spd >= 24.0).length;
 
             onHudUpdate?.({
               voronoiSplit: interpFrame.vor,
@@ -195,7 +196,7 @@ export function PitchCanvas({
               team1HullArea_m2: interpFrame.hullArea.team1_m2,
               defLine0_x: def0,
               defLine1_x: def1,
-              activePlayersCount: interpFrame.players.length,
+              activePlayersCount: activeFieldPlayers.length,
               sprintingCount: sprinting,
             });
           }
