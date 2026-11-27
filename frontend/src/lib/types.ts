@@ -128,6 +128,7 @@ export interface FramePlayer {
 export interface TimelineFrame {
   f: number; // frame index (0-based)
   t: number; // time in seconds
+  hv?: boolean; // true when pitch homography is geometrically valid (false during close-ups/replays)
   players: FramePlayer[];
   ball: [number, number] | null; // [x_m, y_m] or null when untracked
   vor: [number, number]; // [team_0_pct, team_1_pct]

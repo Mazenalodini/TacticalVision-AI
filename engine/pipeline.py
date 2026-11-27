@@ -130,6 +130,9 @@ class MatchAnalysisPipeline:
         full_crop_counts: Dict[int, int] = defaultdict(int)
         prev_thumb_hsv: Optional[np.ndarray] = None
         prev_thumb_gray: Optional[np.ndarray] = None
+        prev_flow_gray: Optional[np.ndarray] = None
+        pitch_green_calibrator = SigLIPTeamClassifier(enable_siglip=False)
+        green_cal_stride = max(1, total_frames // 20)
 
         pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)", mininterval=0.25)
         for f_idx in pbar:
@@ -137,10 +140,13 @@ class MatchAnalysisPipeline:
             if not ok:
                 break
 
+            if f_idx % green_cal_stride == 0:
+                pitch_green_calibrator.calibrate_pitch_green(frame)
+
             # Lightweight hard scene-cut detection (HSV histogram L1 + luminance MAD on 96x54 thumb)
             thumb = cv2.resize(frame, (96, 54), interpolation=cv2.INTER_AREA)
             cur_hsv = cv2.cvtColor(thumb, cv2.COLOR_BGR2HSV)
-            cur_gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
+            cur_gray_thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
             is_scene_cut = False
             if prev_thumb_hsv is not None and prev_thumb_gray is not None:
                 h_cur = cv2.calcHist([cur_hsv], [0, 2], None, [16, 8], [0, 180, 0, 256]).ravel()
@@ -148,20 +154,29 @@ class MatchAnalysisPipeline:
                 h_cur = h_cur / max(1e-6, float(h_cur.sum()))
                 h_prev = h_prev / max(1e-6, float(h_prev.sum()))
                 hist_l1 = float(np.sum(np.abs(h_cur - h_prev))) * 0.5
-                mad = float(np.mean(np.abs(cur_gray.astype(np.float32) - prev_thumb_gray.astype(np.float32))))
+                mad = float(np.mean(np.abs(cur_gray_thumb.astype(np.float32) - prev_thumb_gray.astype(np.float32))))
                 if hist_l1 > 0.45 and mad > 28.0:
                     is_scene_cut = True
             prev_thumb_hsv = cur_hsv
-            prev_thumb_gray = cur_gray
+            prev_thumb_gray = cur_gray_thumb
+
+            # Grayscale frame for inter-frame background optical flow ΔH propagation
+            cur_flow_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             if self.cfg.enable_action_spotting and (f_idx % spotting_stride == 0):
                 spotting_frames_bgr.append(cv2.resize(frame, (224, 224), interpolation=cv2.INTER_LINEAR))
 
             run_pitch = is_scene_cut or (homography.H is None) or (f_idx % pitch_stride == 0)
-            det = self.detector.infer_frame(frame, run_pitch=run_pitch)
-            boxes, confs, clss, tids = player_tracker.update(
-                det["person_boxes"], det["person_confs"], det["person_clss"]
-            )
+            det = self.detector.infer_frame(frame, run_pitch=run_pitch, use_botsort=True)
+            if det.get("person_tids") is not None and len(det["person_tids"]) == len(det["person_boxes"]):
+                boxes = det["person_boxes"]
+                confs = det["person_confs"]
+                clss = det["person_clss"]
+                tids = det["person_tids"]
+            else:
+                boxes, confs, clss, tids = player_tracker.update(
+                    det["person_boxes"], det["person_confs"], det["person_clss"]
+                )
             ball_xy, ball_det_ok = ball_tracker.update(det["ball_boxes"], det["ball_confs"])
             raw_ball_xy.append(ball_xy)
 
@@ -176,11 +191,23 @@ class MatchAnalysisPipeline:
                     det["pitch_kpts_conf"],
                     player_feet_px=feet_px,
                     is_scene_cut=is_scene_cut,
+                    prev_gray=prev_flow_gray,
+                    cur_gray=cur_flow_gray,
+                    exclude_boxes=boxes,
+                    img_width=width,
                 )
+            elif homography.H is not None and prev_flow_gray is not None:
+                homography.propagate_optical_flow(
+                    prev_flow_gray,
+                    cur_flow_gray,
+                    exclude_boxes=boxes,
+                    player_feet_px=feet_px,
+                )
+            prev_flow_gray = cur_flow_gray
 
             # Project player foot-points (bottom center of bounding box) onto FIFA pitch (meters)
             entities = []
-            if feet_px is not None:
+            if feet_px is not None and homography.homography_valid:
                 feet_m = homography.image_to_pitch(feet_px)
             else:
                 feet_m = None
@@ -229,6 +256,7 @@ class MatchAnalysisPipeline:
                 "H_inv": homography.H_inv.copy() if homography.H_inv is not None else None,
                 "ball_detected": ball_det_ok,
                 "homography_reset": bool(is_scene_cut or homography.last_was_reset),
+                "homography_valid": bool(homography.homography_valid),
             })
 
         cap.release()
@@ -243,20 +271,24 @@ class MatchAnalysisPipeline:
             self.detector = None
         self._release_memory()
 
-        # Backfill any early frames before the first valid Homography so radar is populated
-        first_valid = next((r for r in frame_records if r["H"] is not None), None)
-        if first_valid is not None:
-            H0, H0_inv = first_valid["H"], first_valid["H_inv"]
-            for rec in frame_records:
-                if rec["H"] is None:
-                    rec["H"], rec["H_inv"] = H0.copy(), H0_inv.copy()
-                    for ent in rec["entities"]:
-                        b = ent["box"]
-                        foot = np.array([[[(b[0] + b[2]) * 0.5, b[3]]]], dtype=np.float32)
-                        m = cv2.perspectiveTransform(foot, H0).reshape(2)
-                        m[0] = np.clip(m[0], -2.0, self.pitch.length + 2.0)
-                        m[1] = np.clip(m[1], -2.0, self.pitch.width + 2.0)
-                        ent["pitch_xy"] = m
+        # Backfill ONLY initial leading frames (before first valid homography & before any scene cut)
+        # Never backfill mid-clip close-up/celebration shots where homography_valid is honestly False!
+        first_valid_idx = next((idx for idx, r in enumerate(frame_records) if r["H"] is not None), None)
+        if first_valid_idx is not None and first_valid_idx > 0:
+            H0, H0_inv = frame_records[first_valid_idx]["H"], frame_records[first_valid_idx]["H_inv"]
+            for idx in range(first_valid_idx):
+                rec = frame_records[idx]
+                if rec.get("homography_reset"):
+                    break
+                rec["H"], rec["H_inv"] = H0.copy(), H0_inv.copy()
+                rec["homography_valid"] = True
+                for ent in rec["entities"]:
+                    b = ent["box"]
+                    foot = np.array([[[(b[0] + b[2]) * 0.5, b[3]]]], dtype=np.float32)
+                    m = cv2.perspectiveTransform(foot, H0.astype(np.float64)).reshape(2)
+                    m[0] = np.clip(m[0], -2.0, self.pitch.length + 2.0)
+                    m[1] = np.clip(m[1], -2.0, self.pitch.width + 2.0)
+                    ent["pitch_xy"] = m
 
         # ======================================================================
         # STAGE 1b: Model 3 Raw-Video Broadcast Action Spotting
@@ -321,8 +353,10 @@ class MatchAnalysisPipeline:
         # ======================================================================
         # STAGE 2: Ball Interpolation, Team Classification & Model 4 Jersey OCR
         # ======================================================================
-        print("[Stage 2] Clustering Teams & Running Model 4 Jersey Recognition...")
+        print("[Stage 2] Clustering Teams (Torso-Masked CIELAB) & Running Model 4 Jersey Recognition...")
         team_classifier = SigLIPTeamClassifier(enable_siglip=self.cfg.enable_siglip)
+        team_classifier.grass_h_lo = pitch_green_calibrator.grass_h_lo
+        team_classifier.grass_h_hi = pitch_green_calibrator.grass_h_hi
         team_classifier.fit(jersey_samples)
         stabilize_team_assignments(
             frame_records,

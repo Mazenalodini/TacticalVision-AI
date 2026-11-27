@@ -18,6 +18,7 @@ export interface StabilizedFrame {
     team1_m2: number;
   };
   isGlitchBridged: boolean;
+  homographyValid: boolean;
 }
 
 export interface CleanTrajectoryPoint {
@@ -493,15 +494,15 @@ export function stabilizeTelemetry(
     trajectories.set(trackId, trajPoints);
   });
 
-  // 2D. Anti-flicker short empty-frame hold/interpolation (1..10 frames) so transient homography drops never blink blank
+  // 2D. Anti-flicker short empty-frame hold/interpolation (1..10 frames) — skip explicit close-up frames (hv === false)
   let iEmpty = 0;
   while (iEmpty < nFrames) {
-    if (perFramePlayers[iEmpty].length > 0) {
+    if (perFramePlayers[iEmpty].length > 0 || rawFrames[iEmpty].hv === false) {
       iEmpty++;
       continue;
     }
     const startEmpty = iEmpty;
-    while (iEmpty < nFrames && perFramePlayers[iEmpty].length === 0) {
+    while (iEmpty < nFrames && perFramePlayers[iEmpty].length === 0 && rawFrames[iEmpty].hv !== false) {
       iEmpty++;
     }
     const endEmpty = iEmpty - 1;
@@ -751,18 +752,21 @@ export function stabilizeTelemetry(
     const cleanVor0 = Number(Math.max(5, Math.min(95, emaVor0)).toFixed(1));
     const cleanVor1 = Number((100 - cleanVor0).toFixed(1));
 
+    const explicitInvalid = rawFr.hv === false;
+    const homographyValid = !explicitInvalid && players.length > 0;
     stabilizedFrames.push({
       f: rawFr.f,
       t: rawFr.t,
-      players,
-      ball: ballTimeline[i],
-      def_x,
+      players: explicitInvalid ? [] : players,
+      ball: explicitInvalid ? null : ballTimeline[i],
+      def_x: explicitInvalid ? {} : def_x,
       vor: [cleanVor0, cleanVor1],
       hullArea: {
         team0_m2: Math.round(emaHull0),
         team1_m2: Math.round(emaHull1),
       },
       isGlitchBridged: glitch,
+      homographyValid,
     });
   }
 
@@ -902,6 +906,7 @@ export function interpolateStabilizedFrame(
       ),
     },
     isGlitchBridged: a.isGlitchBridged || b.isGlitchBridged,
+    homographyValid: alpha < 0.5 ? a.homographyValid : b.homographyValid,
   };
 }
 

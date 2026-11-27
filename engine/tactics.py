@@ -668,13 +668,15 @@ class TacticalAnalyticsEngine:
                 "passes_1": int(cum_pass[1][f_idx]),
             }
 
+            hv = bool(rec.get("homography_valid", rec.get("H") is not None or len(frame_players_json) > 0))
             timeline_frames.append({
                 "f": f_idx,
                 "t": round(f_idx / self.fps, 2),
-                "players": frame_players_json,
-                "ball": [round(float(ball_p[0]), 2), round(float(ball_p[1]), 2)] if ball_p is not None else None,
+                "hv": hv,
+                "players": frame_players_json if hv else [],
+                "ball": [round(float(ball_p[0]), 2), round(float(ball_p[1]), 2)] if (hv and ball_p is not None) else None,
                 "vor": [vor_metrics["team_0_pct"], vor_metrics["team_1_pct"]],
-                "def_x": {str(k): round(float(v), 2) for k, v in def_lines.items()},
+                "def_x": {str(k): round(float(v), 2) for k, v in def_lines.items()} if hv else {},
             })
 
         # 4. Assemble Clean Frontend-Ready Telemetry Contract

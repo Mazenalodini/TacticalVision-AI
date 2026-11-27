@@ -142,6 +142,7 @@ class FramePlayer(BaseModel):
 class TimelineFrame(BaseModel):
     f: int
     t: float
+    hv: Optional[bool] = True            # Honest homography calibration validity flag
     players: list[FramePlayer]
     ball: Optional[list[float]] = None   # [x, y] or null
     vor: list[float]                     # [team_0_pct, team_1_pct]

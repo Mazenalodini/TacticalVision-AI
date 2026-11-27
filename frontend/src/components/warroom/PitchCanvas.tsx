@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Crosshair } from "lucide-react";
+import { Crosshair, VideoOff } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry } from "@/lib/types";
 import {
@@ -59,6 +59,8 @@ export function PitchCanvas({
   const viewportRef = useRef<PitchViewport | null>(null);
   const lastInterpRef = useRef<StabilizedFrame | null>(null);
   const lastNotifiedKeyRef = useRef<string>("");
+  const lastTrackingPausedRef = useRef<boolean>(false);
+  const [isTrackingPaused, setIsTrackingPaused] = useState<boolean>(false);
   const hoveredIdRef = useRef<number | null>(null);
   const [hoveredInfo, setHoveredInfo] = useState<{
     id: number;
@@ -191,6 +193,12 @@ export function PitchCanvas({
           ctx.restore();
 
           // Notify LiveTacticalHud smoothly (keyed at 20Hz quantized step so UI stays crisp)
+          const pausedNow = !interpFrame.homographyValid;
+          if (pausedNow !== lastTrackingPausedRef.current) {
+            lastTrackingPausedRef.current = pausedNow;
+            setIsTrackingPaused(pausedNow);
+          }
+
           const notifyKey = `${Math.round(exactFrame * 2)}:${interpFrame.hullArea.team0_m2}:${interpFrame.hullArea.team1_m2}`;
           if (notifyKey !== lastNotifiedKeyRef.current) {
             lastNotifiedKeyRef.current = notifyKey;
@@ -379,6 +387,15 @@ export function PitchCanvas({
           </div>
         );
       })()}
+
+      {isTrackingPaused && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4 z-10">
+          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-950/85 backdrop-blur-md border border-white/15 shadow-xl text-xs font-semibold text-slate-200">
+            <VideoOff className="w-3.5 h-3.5 text-tv-amber shrink-0" />
+            <span>{t("wr.closeup_paused")}</span>
+          </div>
+        </div>
+      )}
 
       {selectedPlayerId === null && (
         <div className="absolute bottom-2 start-2.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] text-slate-300 bg-black/70 backdrop-blur-sm border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
