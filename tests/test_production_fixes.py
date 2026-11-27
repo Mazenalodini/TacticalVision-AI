@@ -191,7 +191,7 @@ def test_model3_calibrated_thresholds_and_cross_class_suppression():
     # Sub-threshold Yellow card at t=50s (0.70 < 0.75) -> MUST be filtered by per-class threshold
     probs[99:102, idx_yellow] = 0.70
 
-    # Single-frame isolated Goal spike at t=60s (0.70 for 1 frame -> smoothed to 0.35 < 0.55) -> MUST be rejected!
+    # Single-frame isolated Goal spike at t=60s (0.70 for 1 frame -> smoothed to 0.35 < 0.45) -> MUST be rejected!
     probs[120, idx_goal] = 0.70
 
     events = spotter.postprocess_probabilities(probs, half=1, fps=2.0, nms_window_sec=15.0)
@@ -200,6 +200,38 @@ def test_model3_calibrated_thresholds_and_cross_class_suppression():
     assert 21.0 <= events[0]["time_s"] <= 23.0
     assert PER_CLASS_THRESHOLDS["Red card"] >= 0.85
     assert PER_CLASS_THRESHOLDS["Substitution"] >= 0.78
+
+
+def test_model3_corroborated_goal_rescue_on_short_youtube_clip():
+    """Corroborated Goal Rescue: rescues real Goal >= 0.18 with Shots on target >= 0.13 within +-3s while keeping fake cards/subs at 0."""
+    spotter = ActionSpotter()
+    T = 138  # 69s @ 2fps (matching Serie a goal)
+    probs = np.full((T, len(ACTION_SPOTTING_CLASSES)), 0.04, dtype=np.float32)
+
+    idx_goal = ACTION_SPOTTING_CLASSES.index("Goal")
+    idx_shot = ACTION_SPOTTING_CLASSES.index("Shots on target")
+    idx_sub = ACTION_SPOTTING_CLASSES.index("Substitution")
+    idx_yellow = ACTION_SPOTTING_CLASSES.index("Yellow card")
+    idx_kickoff = ACTION_SPOTTING_CLASSES.index("Kick-off")
+
+    # Background Goal median ~0.06, real corroborated Goal peak at t=22.4s (frame 45)
+    probs[:, idx_goal] = 0.06
+    probs[44:47, idx_goal] = 0.1946
+    probs[44:47, idx_shot] = 0.1516
+
+    # Uncorroborated weak Goal bump at t=50s (no Shot on target!) -> MUST NOT fire
+    probs[99:102, idx_goal] = 0.21
+
+    # Hallucinated celebration cards/subs/kick-offs (0.18..0.26) -> MUST stay 0
+    probs[48:52, idx_yellow] = 0.182
+    probs[52:56, idx_sub] = 0.255
+    probs[120:124, idx_kickoff] = 0.215
+
+    events = spotter.postprocess_probabilities(probs, half=1, fps=2.0, nms_window_sec=15.0)
+    labels = [e["label"] for e in events]
+    assert labels == ["Goal"], f"Expected only rescued ['Goal'], got {events}"
+    assert 21.5 <= events[0]["time_s"] <= 23.5
+    assert events[0]["confidence"] >= 0.18
 
 
 def test_half_pitch_symmetry_lock_prevents_180_flip():

@@ -70,9 +70,15 @@ PER_CLASS_THRESHOLDS: Dict[str, float] = {
     "Clearance": 0.65,
     # Core attacking events
     "Shots off target": 0.58,
-    "Goal": 0.55,
+    "Goal": 0.45,
     "Shots on target": 0.55,
 }
+
+# Corroborated Goal Rescue constants (domain-shifted short live clips)
+CORROBORATED_GOAL_MIN_CONF = 0.18
+CORROBORATED_GOAL_PEAK_MULT = 2.0
+CORROBORATED_SHOT_MIN_CONF = 0.13
+CORROBORATED_SHOT_WINDOW_SEC = 3.0
 
 # Events suppressed when Goal or Shots on target fires within +-5.0s (celebration / replay cut window)
 ATTACK_SUPPRESSED_CLASSES = {
@@ -403,6 +409,54 @@ class ActionSpotter:
                 lo = max(0, idx - rad)
                 hi = min(T, idx + rad + 1)
                 scores[lo:hi] = -1.0
+
+        # Corroborated Goal Rescue (strictly for Goal on live/domain-shifted clips when no higher floor_conf is requested):
+        # Rescues a distinct Goal local peak (>= 0.18 AND >= 2.0x clip median Goal prob)
+        # ONLY when corroborated by Shots on target >= 0.13 within +-3.0s.
+        if (
+            use_calibrated_thresholds
+            and floor_conf <= CORROBORATED_GOAL_MIN_CONF
+            and "Goal" in self.classes
+            and "Shots on target" in self.classes
+            and T >= 1
+        ):
+            idx_goal = self.classes.index("Goal")
+            idx_shot = self.classes.index("Shots on target")
+            goal_curve = smoothed[:, idx_goal]
+            shot_curve = smoothed[:, idx_shot]
+            goal_med = float(np.median(goal_curve))
+            corrob_rad = max(1, int(round(CORROBORATED_SHOT_WINDOW_SEC * eff_fps)))
+
+            rescue_scores = goal_curve.copy()
+            # Mask out windows around any Goal already detected via standard >= 0.45 threshold
+            for cid, g_idx, _ in raw_dets:
+                if cid == idx_goal:
+                    rescue_scores[max(0, g_idx - rad):min(T, g_idx + rad + 1)] = -1.0
+
+            while True:
+                idx = int(np.argmax(rescue_scores))
+                val = float(rescue_scores[idx])
+                if val < CORROBORATED_GOAL_MIN_CONF:
+                    break
+                # Always mask this peak's NMS window before checking next candidate
+                lo_nms = max(0, idx - rad)
+                hi_nms = min(T, idx + rad + 1)
+                rescue_scores[lo_nms:hi_nms] = -1.0
+
+                is_local_peak = (
+                    (idx == 0 or val >= float(goal_curve[idx - 1]))
+                    and (idx == T - 1 or val >= float(goal_curve[idx + 1]))
+                )
+                lo_shot = max(0, idx - corrob_rad)
+                hi_shot = min(T, idx + corrob_rad + 1)
+                shot_support = float(np.max(shot_curve[lo_shot:hi_shot])) if hi_shot > lo_shot else 0.0
+
+                if (
+                    is_local_peak
+                    and val >= (CORROBORATED_GOAL_PEAK_MULT * goal_med)
+                    and shot_support >= CORROBORATED_SHOT_MIN_CONF
+                ):
+                    raw_dets.append((idx_goal, idx, val))
 
         # Build candidate dicts
         candidates: List[Dict[str, Any]] = []
