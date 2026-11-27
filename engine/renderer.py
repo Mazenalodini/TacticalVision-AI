@@ -31,8 +31,12 @@ class BroadcastRenderer:
         self.base_pitch_img = self._build_base_pitch()
 
     def _m_to_radar(self, x_m: float, y_m: float) -> Tuple[int, int]:
-        rx = int(self.pad + np.clip(x_m, 0.0, self.pitch.length) * self.scale)
-        ry = int(self.pad + np.clip(y_m, 0.0, self.pitch.width) * self.scale)
+        xv = float(x_m) if np.isfinite(x_m) else 0.0
+        yv = float(y_m) if np.isfinite(y_m) else 0.0
+        rx = int(self.pad + np.clip(xv, 0.0, self.pitch.length) * self.scale)
+        ry = int(self.pad + np.clip(yv, 0.0, self.pitch.width) * self.scale)
+        rx = max(0, min(self.radar_w - 1, rx))
+        ry = max(0, min(self.radar_h - 1, ry))
         return rx, ry
 
     def _build_base_pitch(self) -> np.ndarray:
@@ -189,7 +193,7 @@ class BroadcastRenderer:
         # 1. Voronoi Pitch Control semi-transparent layer
         vor = rec.get("voronoi_grid")
         if vor is not None and np.any(vor >= 0):
-            vor_rgb = np.zeros((68, 105, 3), dtype=np.uint8)
+            vor_rgb = np.zeros((vor.shape[0], vor.shape[1], 3), dtype=np.uint8)
             vor_rgb[vor == 0] = self.cfg.team_colors_bgr[0]
             vor_rgb[vor == 1] = self.cfg.team_colors_bgr[1]
             vor_resized = cv2.resize(

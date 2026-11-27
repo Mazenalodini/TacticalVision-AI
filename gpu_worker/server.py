@@ -159,6 +159,7 @@ def _parse_pipeline_log_line(job: GpuJobState, line: str, current_pass: List[int
         return
     if "%|" not in text:
         job.logs.append(text[:240])
+        print(f"[Job {job.job_id}] {text[:240]}", flush=True)
 
     if "[Init]" in text:
         job.stage = "detecting"

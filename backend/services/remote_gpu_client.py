@@ -140,6 +140,48 @@ def cancel_remote_gpu_job_best_effort(target_url: str, remote_job_id: str) -> No
         pass
 
 
+class _ProgressFileWrapper:
+    """File-like wrapper that streams video chunks and reports uploaded MB progress."""
+
+    def __init__(
+        self,
+        fh: Any,
+        total_bytes: int,
+        on_progress: Callable[[int, int], None],
+        cancel_event: threading.Event,
+        chunk_cap: int = 262_144,
+    ) -> None:
+        self._fh = fh
+        self._total = max(1, int(total_bytes))
+        self._sent = 0
+        self._on_progress = on_progress
+        self._cancel_event = cancel_event
+        self._chunk_cap = chunk_cap
+        self._last_report = 0.0
+
+    def read(self, size: int = -1) -> bytes:
+        if self._cancel_event.is_set():
+            raise RuntimeError("Upload cancelled by user.")
+        read_sz = self._chunk_cap if (size is None or size < 0 or size > self._chunk_cap) else size
+        data = self._fh.read(read_sz)
+        if data:
+            self._sent = min(self._total, self._sent + len(data))
+            now = time.monotonic()
+            if (now - self._last_report) >= 0.35 or self._sent >= self._total:
+                self._last_report = now
+                self._on_progress(self._sent, self._total)
+        return data
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        pos = self._fh.seek(offset, whence)
+        if pos == 0:
+            self._sent = 0
+        return pos
+
+    def tell(self) -> int:
+        return self._fh.tell()
+
+
 def run_remote_gpu_bridge(
     *,
     local_job_id: str,
@@ -166,15 +208,43 @@ def run_remote_gpu_bridge(
 
     try:
         clean_url = validate_remote_gpu_url(target_url)
-        on_status("detecting", 4.0, "Uploading video to Remote GPU Worker...", _elapsed(), None)
+        file_size_bytes = video_path.stat().st_size if video_path.exists() else 0
+        total_mb = file_size_bytes / (1024.0 * 1024.0)
+        on_status(
+            "detecting",
+            4.0,
+            f"رفع الفيديو إلى خادم GPU (0.0 / {total_mb:.1f} MB)...",
+            _elapsed(),
+            None,
+        )
 
         if cancel_event.is_set():
             return
 
-        # 1. Upload video to POST {clean_url}/analyze
-        with httpx.Client(timeout=httpx.Timeout(180.0, connect=15.0), follow_redirects=True) as client:
+        def _report_upload_progress(sent_bytes: int, total_bytes: int) -> None:
+            ratio = min(1.0, max(0.0, sent_bytes / max(1, total_bytes)))
+            pct = 4.0 + ratio * 8.0  # Smoothly 4% -> 12%
+            sent_mb = sent_bytes / (1024.0 * 1024.0)
+            tot_mb = total_bytes / (1024.0 * 1024.0)
+            on_status(
+                "detecting",
+                round(pct, 1),
+                f"رفع الفيديو إلى خادم GPU ({sent_mb:.1f} / {tot_mb:.1f} MB)...",
+                _elapsed(),
+                None,
+            )
+
+        # 1. Stream video upload to POST {clean_url}/analyze with generous write timeout (900s)
+        upload_timeout = httpx.Timeout(connect=20.0, read=180.0, write=900.0, pool=30.0)
+        with httpx.Client(timeout=upload_timeout, follow_redirects=True) as client:
             with open(video_path, "rb") as vf:
-                files = {"file": (video_path.name, vf, "video/mp4")}
+                wrapped = _ProgressFileWrapper(
+                    vf,
+                    total_bytes=file_size_bytes,
+                    on_progress=_report_upload_progress,
+                    cancel_event=cancel_event,
+                )
+                files = {"file": (video_path.name, wrapped, "video/mp4")}
                 data = {
                     "match_name": title,
                     "max_seconds": str(max_seconds),
@@ -196,7 +266,7 @@ def run_remote_gpu_bridge(
 
             on_status(
                 "detecting",
-                8.0,
+                12.0,
                 "Connected to Remote GPU — Starting 4-Model Full-Precision Pipeline...",
                 _elapsed(),
                 None,
@@ -226,7 +296,7 @@ def run_remote_gpu_bridge(
 
                 r_status = str(st_data.get("status", "running"))
                 r_stage = REMOTE_STAGE_MAP.get(str(st_data.get("stage", "detecting")), "detecting")
-                r_pct = float(st_data.get("percent", 10.0))
+                r_pct = float(st_data.get("percent", 12.0))
                 r_msg = str(st_data.get("message") or "Processing on Remote GPU...")
 
                 if r_status == "completed":
@@ -238,8 +308,8 @@ def run_remote_gpu_bridge(
                     err_txt = str(st_data.get("error") or r_msg or "Remote GPU analysis failed.")
                     raise RuntimeError(err_txt)
 
-                # Reserve 95%..100% for local bundle download & extraction
-                mapped_pct = min(94.0, max(8.0, r_pct * 0.94))
+                # Map remote 0..100% into 12%..95% (reserving 4..12% upload & 95..100% download)
+                mapped_pct = min(95.0, max(12.0, 12.0 + r_pct * 0.83))
                 on_status(r_stage, mapped_pct, r_msg, _elapsed(), None)
 
                 if cancel_event.wait(poll_interval_s):

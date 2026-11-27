@@ -10,6 +10,7 @@ from engine.tactics import (
     bridge_ball_pitch_trajectory,
     extract_possession_and_passes,
     is_progressive_pass,
+    lookup_xt,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,3 +84,28 @@ def test_match_03_press_produces_both_teams_passes():
     edges_t0 = [e for e in data["passing_network"] if e["team"] == 0]
     edges_t1 = [e for e in data["passing_network"] if e["team"] == 1]
     assert len(edges_t0) > 0 and len(edges_t1) > 0
+
+
+def test_lookup_xt_strict_boundary_and_nan_clamping():
+    """Verify lookup_xt never raises IndexError on out-of-bounds goals/corners/throw-ins or NaN."""
+    pitch = FIFAPitchConfig()
+    xs = [-5.0, 0.0, 52.5, 105.0, 110.0]
+    ys = [-2.0, 0.0, 34.0, 68.0, 72.0]
+
+    for team in (0, 1):
+        for x in xs:
+            for y in ys:
+                val = lookup_xt(x, y, team, pitch)
+                assert isinstance(val, float)
+                assert np.isfinite(val)
+                assert 0.0 < val <= 0.25
+
+        # NaN / Inf coordinates must safely return 0.0
+        assert lookup_xt(float("nan"), 34.0, team, pitch) == 0.0
+        assert lookup_xt(52.5, float("nan"), team, pitch) == 0.0
+        assert lookup_xt(float("inf"), 34.0, team, pitch) == 0.0
+        assert lookup_xt(52.5, float("-inf"), team, pitch) == 0.0
+
+    # Team 0 attacking goal line (x=105, y=34) should equal Team 1 attacking goal line (x=0, y=34)
+    assert lookup_xt(105.0, 34.0, 0, pitch) == lookup_xt(0.0, 34.0, 1, pitch)
+    assert lookup_xt(110.0, 34.0, 0, pitch) == lookup_xt(-5.0, 34.0, 1, pitch)

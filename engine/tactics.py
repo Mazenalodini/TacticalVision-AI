@@ -11,13 +11,26 @@ def lookup_xt(x_m: float, y_m: float, team: int, pitch: FIFAPitchConfig) -> floa
     """
     Computes Expected Threat (xT) from Karun Singh's 12x8 pitch value matrix.
     Team 0 attacks Left -> Right (X: 0 -> 105); Team 1 attacks Right -> Left (X: 105 -> 0).
+    Strictly guards against NaN/Inf and out-of-bounds coordinates (goals, corners, throw-ins).
     """
-    x_norm = np.clip(x_m / pitch.length, 0.0, 0.9999)
-    y_norm = np.clip(y_m / pitch.width, 0.0, 0.9999)
-    if team == 1:
+    try:
+        x_val = float(x_m)
+        y_val = float(y_m)
+    except (TypeError, ValueError):
+        return 0.0
+    if not (np.isfinite(x_val) and np.isfinite(y_val)):
+        return 0.0
+
+    pitch_len = max(1e-6, float(pitch.length))
+    pitch_wid = max(1e-6, float(pitch.width))
+    x_norm = float(np.clip(x_val / pitch_len, 0.0, 1.0))
+    y_norm = float(np.clip(y_val / pitch_wid, 0.0, 1.0))
+    if int(team) == 1:
         x_norm = 1.0 - x_norm
-    col = int(x_norm * 12)
-    row = int(y_norm * 8)
+
+    n_rows, n_cols = XT_GRID.shape
+    col = max(0, min(n_cols - 1, int(x_norm * n_cols)))
+    row = max(0, min(n_rows - 1, int(y_norm * n_rows)))
     return float(XT_GRID[row, col])
 
 
@@ -255,8 +268,13 @@ class TacticalAnalyticsEngine:
           owner_grid: (68, 105) int8 array of 0/1 indicating nearest team for each 1m^2 cell
           metrics: dict with team_0_pct, team_1_pct, and zonal thirds control for Team 0
         """
+        if len(players_xy) > 0:
+            finite_mask = np.all(np.isfinite(players_xy), axis=-1)
+            players_xy = players_xy[finite_mask]
+            players_team = players_team[finite_mask]
+
         if len(players_xy) < 2 or len(np.unique(players_team)) < 2:
-            empty = np.full((68, 105), -1, dtype=np.int8)
+            empty = np.full(self.grid_xx.shape, -1, dtype=np.int8)
             return empty, {
                 "team_0_pct": 50.0,
                 "team_1_pct": 50.0,
@@ -269,7 +287,7 @@ class TacticalAnalyticsEngine:
         diff = self.grid_pts[:, None, :] - players_xy[None, :, :]
         dist2 = np.sum(diff * diff, axis=-1)
         nearest_idx = np.argmin(dist2, axis=1)
-        owner = players_team[nearest_idx].reshape(68, 105).astype(np.int8)
+        owner = players_team[nearest_idx].reshape(self.grid_xx.shape).astype(np.int8)
 
         t0_all = float(np.mean(owner == 0) * 100.0)
         t0_def = float(np.mean(owner[:, :35] == 0) * 100.0)
@@ -504,10 +522,14 @@ class TacticalAnalyticsEngine:
                             t0_pts.append(pt)
                         else:
                             t1_pts.append(pt)
-                    # Accumulate heatmap
-                    hx = int(np.clip(pt[0] / self.pitch.length, 0.0, 0.999) * 12)
-                    hy = int(np.clip(pt[1] / self.pitch.width, 0.0, 0.999) * 8)
-                    heatmaps[tm][hy, hx] += 1
+                    # Accumulate heatmap with strict finite + grid-index clamping
+                    if np.isfinite(pt[0]) and np.isfinite(pt[1]):
+                        h_rows, h_cols = heatmaps[tm].shape
+                        hx_norm = float(np.clip(float(pt[0]) / max(1e-6, float(self.pitch.length)), 0.0, 1.0))
+                        hy_norm = float(np.clip(float(pt[1]) / max(1e-6, float(self.pitch.width)), 0.0, 1.0))
+                        hx = max(0, min(h_cols - 1, int(hx_norm * h_cols)))
+                        hy = max(0, min(h_rows - 1, int(hy_norm * h_rows)))
+                        heatmaps[tm][hy, hx] += 1
 
                     jinfo = jersey_map.get(tid, {})
                     fp_entry = {
