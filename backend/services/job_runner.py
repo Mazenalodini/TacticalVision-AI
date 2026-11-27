@@ -12,12 +12,17 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
 
 from ..config import settings
+from .remote_gpu_client import (
+    cancel_remote_gpu_job_best_effort,
+    run_remote_gpu_bridge,
+)
 
 
 class JobRunner:
@@ -26,6 +31,8 @@ class JobRunner:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self._active_processes: dict[str, subprocess.Popen] = {}
         self._log_handles: dict[str, Any] = {}
+        self._remote_cancel_events: dict[str, threading.Event] = {}
+        self._remote_job_refs: dict[str, dict[str, str]] = {}
 
     def start_job(
         self,
@@ -101,6 +108,89 @@ class JobRunner:
         )
         return job_id
 
+    def start_remote_gpu_job(
+        self,
+        video_path: Path,
+        title: str,
+        remote_gpu_url: str,
+        max_seconds: float = 0.0,
+        start_seconds: float = 0.0,
+        enable_jersey_ocr: bool = True,
+        poll_interval_s: float = 2.0,
+    ) -> str:
+        """Start an async Remote GPU Worker proxy job (Kaggle / Colab)."""
+        job_id = f"job_{uuid.uuid4().hex[:12]}"
+        match_id = f"user_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        output_dir = settings.outputs_dir / match_id
+        clamped_seconds = max(0.0, float(max_seconds or 0.0))
+        clamped_start = max(0.0, float(start_seconds or 0.0))
+
+        cancel_event = threading.Event()
+        self._remote_cancel_events[job_id] = cancel_event
+        self._remote_job_refs[job_id] = {"url": remote_gpu_url.strip().rstrip("/"), "remote_job_id": ""}
+
+        self._write_status(
+            job_id=job_id,
+            status="queued",
+            progress_pct=2.0,
+            stage_label="Queued for Remote GPU Worker",
+            elapsed_s=0.0,
+            match_id=match_id,
+            pid=None,
+            video_path=str(video_path),
+        )
+
+        def _on_status(
+            st: str,
+            pct: float,
+            label: str,
+            elapsed: float,
+            err: Optional[str],
+        ) -> None:
+            if cancel_event.is_set() and st != "cancelled":
+                return
+            self._write_status(
+                job_id=job_id,
+                status=st,
+                progress_pct=round(pct, 1),
+                stage_label=label,
+                elapsed_s=elapsed,
+                error=err,
+                match_id=match_id,
+                pid=None,
+                video_path=None if st in ("completed", "failed", "cancelled") else str(video_path),
+            )
+            if st in ("completed", "failed", "cancelled"):
+                self._remote_cancel_events.pop(job_id, None)
+                self._remote_job_refs.pop(job_id, None)
+
+        def _on_remote_job_id(rid: str) -> None:
+            ref = self._remote_job_refs.get(job_id)
+            if ref is not None:
+                ref["remote_job_id"] = rid
+
+        t = threading.Thread(
+            target=run_remote_gpu_bridge,
+            kwargs={
+                "local_job_id": job_id,
+                "match_id": match_id,
+                "video_path": video_path,
+                "output_dir": output_dir,
+                "title": title,
+                "target_url": remote_gpu_url,
+                "max_seconds": clamped_seconds,
+                "start_seconds": clamped_start,
+                "enable_jersey_ocr": enable_jersey_ocr,
+                "cancel_event": cancel_event,
+                "on_status": _on_status,
+                "on_remote_job_id": _on_remote_job_id,
+                "poll_interval_s": poll_interval_s,
+            },
+            daemon=True,
+        )
+        t.start()
+        return job_id
+
     def get_job_status(self, job_id: str) -> Optional[dict[str, Any]]:
         """Read current job status from backend/jobs/{job_id}.json."""
         job_file = self.jobs_dir / f"{job_id}.json"
@@ -170,7 +260,19 @@ class JobRunner:
             video_path=None,
         )
 
-        # 2. Terminate subprocess cleanly on Windows (and POSIX)
+        # 2. Signal remote GPU proxy thread (if applicable) & send best-effort remote cancel
+        cancel_ev = self._remote_cancel_events.pop(job_id, None)
+        if cancel_ev is not None:
+            cancel_ev.set()
+        remote_ref = self._remote_job_refs.pop(job_id, None)
+        if remote_ref and remote_ref.get("url") and remote_ref.get("remote_job_id"):
+            threading.Thread(
+                target=cancel_remote_gpu_job_best_effort,
+                args=(remote_ref["url"], remote_ref["remote_job_id"]),
+                daemon=True,
+            ).start()
+
+        # 3. Terminate subprocess cleanly on Windows (and POSIX)
         proc = self._active_processes.pop(job_id, None)
         target_pid = proc.pid if proc is not None else pid
 

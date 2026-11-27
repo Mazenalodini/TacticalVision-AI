@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -221,9 +222,14 @@ class EngineConfig:
         if "torso_crop_box" in m4 and len(m4["torso_crop_box"]) == 4:
             self.jersey_torso_crop_box = tuple(float(v) for v in m4["torso_crop_box"])  # type: ignore
 
-        models_dir = Path(self.players_model_path).resolve().parent if self.players_model_path else (root / "models")
+        env_models = Path(os.environ["MODELS_DIR"]) if os.environ.get("MODELS_DIR", "").strip() else None
+        models_dir = (
+            Path(self.players_model_path).resolve().parent
+            if self.players_model_path
+            else (env_models or (root / "models"))
+        )
         if not models_dir.exists():
-            models_dir = root / "models"
+            models_dir = env_models if (env_models and env_models.exists()) else (root / "models")
         if not self.jersey_legibility_onnx_path:
             pref = str(m4.get("preferred_legibility_file", "jersey_legibility_v1_int8.onnx"))
             cand = models_dir / pref

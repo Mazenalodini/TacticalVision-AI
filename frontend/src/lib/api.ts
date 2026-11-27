@@ -106,6 +106,32 @@ export async function deleteMatch(matchId: string): Promise<void> {
   }
 }
 
+export interface GpuPingResponse {
+  reachable: boolean;
+  url: string;
+  status: string;
+  gpu_available: boolean;
+  gpu_name: string | null;
+  vram_gb: number | null;
+  models_ready: boolean;
+  missing_models: string[];
+  latency_ms: number;
+  error: string | null;
+}
+
+export async function pingRemoteGpu(url: string): Promise<GpuPingResponse> {
+  const res = await fetch(`${API_BASE}/api/gpu/ping`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: `Error ${res.status}` }));
+    throw new Error(errorData.detail || `GPU ping failed with status ${res.status}`);
+  }
+  return res.json();
+}
+
 // ── 4-Model AI Suite & Action Spotting (Models 3 & 4) ────────────
 
 export async function fetchModelsSuite(): Promise<ModelsSuiteResponse> {

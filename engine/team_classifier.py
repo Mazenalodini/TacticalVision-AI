@@ -59,7 +59,13 @@ class SigLIPTeamClassifier:
         crop = frame_bgr[jy1:jy2, jx1:jx2]
         if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 4:
             return None
-        return crop
+        # CRITICAL: .copy() detaches the 4KB crop from the 6MB 1080p video frame buffer
+        return crop.copy()
+
+    def close(self) -> None:
+        self.model = None
+        self.processor = None
+        self.reducer = None
 
     def _extract_lab_features(self, crops_bgr: List[np.ndarray]) -> np.ndarray:
         feats = []

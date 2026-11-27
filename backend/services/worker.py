@@ -207,6 +207,8 @@ def main() -> int:
     parser.add_argument("--max-seconds", type=float, default=0.0, help="Maximum clip duration to analyze (0 = full video)")
     parser.add_argument("--start-seconds", type=float, default=0.0, help="Optional clip start timestamp in seconds")
     parser.add_argument("--mode", default="cpu_quick", help="Analysis mode (cpu_quick | remote_gpu)")
+    parser.add_argument("--models-dir", default="", help="Optional override directory for model weights (e.g. Kaggle /kaggle/input/...)")
+    parser.add_argument("--fast-scan", action="store_true", default=False, help="Use 640px player detector even on GPU for rapid scanning")
     parser.add_argument(
         "--enable-jersey-ocr",
         dest="enable_jersey_ocr",
@@ -276,7 +278,10 @@ def main() -> int:
         from engine.config import EngineConfig
         from engine.pipeline import MatchAnalysisPipeline
 
-        models_dir = project_root / "models"
+        env_models_dir = (args.models_dir or os.environ.get("MODELS_DIR", "")).strip()
+        models_dir = Path(env_models_dir) if env_models_dir else (project_root / "models")
+        if env_models_dir:
+            os.environ["MODELS_DIR"] = str(models_dir)
         players_model = str(models_dir / "players_best.pt")
         pitch_model = str(models_dir / "pitch_best.pt")
         v1_thresh = project_root / "artifacts" / "models_meta" / "optimal_thresholds_v1.json"
@@ -292,12 +297,14 @@ def main() -> int:
         # while keeping full 1280px / 640px precision for remote_gpu or CUDA devices.
         # NOTE: pitch_imgsz MUST stay 640 always — 512 produces too few keypoints
         # for valid homography on zoomed broadcast angles (confirmed on Serie A clips).
-        use_cpu_fast = args.mode == "cpu_quick" and not torch.cuda.is_available()
+        use_cpu_fast = (args.mode == "cpu_quick" and not torch.cuda.is_available()) or bool(args.fast_scan)
         det_imgsz = 640 if use_cpu_fast else 1280
         pitch_imgsz = 640  # Never degrade — 512px kills homography on tight angles
+        enable_siglip = (args.mode == "remote_gpu") or torch.cuda.is_available()
         orig_stdout.write(
             f"[Worker] Mode={args.mode} | CUDA={torch.cuda.is_available()} | "
-            f"det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz} | jersey_ocr={args.enable_jersey_ocr}\n"
+            f"models_dir={models_dir} | det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz} | "
+            f"siglip={enable_siglip} | jersey_ocr={args.enable_jersey_ocr}\n"
         )
         orig_stdout.flush()
 
@@ -307,7 +314,7 @@ def main() -> int:
             thresholds_path=thresholds_path if Path(thresholds_path).exists() else "",
             det_imgsz=det_imgsz,
             pitch_imgsz=pitch_imgsz,
-            enable_siglip=not use_cpu_fast,
+            enable_siglip=enable_siglip,
             enable_jersey_ocr=bool(args.enable_jersey_ocr),
         )
 

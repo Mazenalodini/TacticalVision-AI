@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import json
+import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -67,7 +69,8 @@ class ActionSpotter:
         registry_path: Optional[str | Path] = None,
     ):
         root = Path(__file__).resolve().parent.parent
-        models_dir = root / "models"
+        env_models = os.environ.get("MODELS_DIR", "").strip()
+        models_dir = Path(env_models) if env_models else (root / "models")
         reg_file = Path(registry_path) if registry_path else (root / "artifacts" / "models_meta" / "models_registry.json")
 
         self.fps: float = 2.0
@@ -109,6 +112,11 @@ class ActionSpotter:
         self._pt_model: Any = None
         self.backend_used: Optional[str] = None
 
+    def close(self) -> None:
+        self._ort_session = None
+        self._pt_model = None
+        gc.collect()
+
     def _ensure_loaded(self) -> None:
         if self._ort_session is not None or self._pt_model is not None:
             return
@@ -119,6 +127,7 @@ class ActionSpotter:
 
                 opts = ort.SessionOptions()
                 opts.intra_op_num_threads = 4
+                opts.enable_cpu_mem_arena = False
                 opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 sess = ort.InferenceSession(
                     str(self.onnx_path),

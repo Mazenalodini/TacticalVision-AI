@@ -112,7 +112,8 @@ class JerseyRecognizer:
         self.enable_ocr = bool(enable_ocr)
 
         root = Path(__file__).resolve().parent.parent
-        models_dir = root / "models"
+        env_models = os.environ.get("MODELS_DIR", "").strip()
+        models_dir = Path(env_models) if env_models else (root / "models")
         if onnx_path is not None:
             self.onnx_path = Path(onnx_path)
         else:
@@ -130,12 +131,20 @@ class JerseyRecognizer:
         self.ocr_available: bool = False
         self.ocr_status: str = "disabled"
         self._parseq: Any = None
+        self._parseq_device: str = "cpu"
         self._rapidocr: Any = None
         self._ocr_tf: Any = None
 
         self._init_gate()
         if self.enable_ocr:
             self._init_parseq()
+
+    def close(self) -> None:
+        self._ort_session = None
+        self._pt_model = None
+        self._parseq = None
+        self._rapidocr = None
+        self._ocr_tf = None
 
     def _init_gate(self) -> None:
         # Primary: ONNX Runtime CPU (INT8 / FP32)
@@ -145,6 +154,7 @@ class JerseyRecognizer:
 
                 opts = ort.SessionOptions()
                 opts.intra_op_num_threads = 4
+                opts.enable_cpu_mem_arena = False
                 opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 sess = ort.InferenceSession(
                     str(self.onnx_path),
@@ -205,13 +215,22 @@ class JerseyRecognizer:
                     if not (ckpt_dir / f"{p.name}.partial").exists()
                 )
             )
-            if has_local_repo and has_local_ckpt:
+            offline = (
+                os.environ.get("HF_HUB_OFFLINE") == "1"
+                or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+            )
+            allow_online_parseq = (
+                (torch.cuda.is_available() and not offline)
+                or os.environ.get("ALLOW_PARSEQ_DOWNLOAD") == "1"
+            )
+            if (has_local_repo and has_local_ckpt) or allow_online_parseq:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
                 parseq = torch.hub.load(
                     "baudm/parseq",
                     "parseq",
                     pretrained=True,
                     trust_repo=True,
-                ).eval()
+                ).eval().to(device)
                 img_sz = parseq.hparams.img_size
                 self._ocr_tf = transforms.Compose([
                     transforms.Resize(img_sz, transforms.InterpolationMode.BICUBIC),
@@ -219,8 +238,9 @@ class JerseyRecognizer:
                     transforms.Normalize(0.5, 0.5),
                 ])
                 self._parseq = parseq
+                self._parseq_device = device
                 self.ocr_available = True
-                self.ocr_status = "parseq_active"
+                self.ocr_status = f"parseq_{device}_active"
                 return
         except Exception:
             pass
@@ -366,9 +386,9 @@ class JerseyRecognizer:
 
             valid_count = len(valid_chosen_scores)
             with torch.no_grad():
-                ob = torch.stack(ocr_tensors)
+                ob = torch.stack(ocr_tensors).to(self._parseq_device)
                 logits = self._parseq(ob)
-                probs = logits.softmax(-1)
+                probs = logits.softmax(-1).cpu()
                 preds, p_confs = self._parseq.tokenizer.decode(probs)
 
             for i_loc, (txt, conf_t) in enumerate(zip(preds, p_confs)):

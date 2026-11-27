@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gc
+import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -10,10 +12,24 @@ import numpy as np
 CAFFE_BGR_MEAN = np.array([103.939, 116.779, 123.68], dtype=np.float32).reshape(1, 1, 3)
 
 
+def _cuda_available() -> bool:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return True
+    except Exception:
+        pass
+    try:
+        import onnxruntime as ort
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
+
 class SoccerNetVideoFeatureExtractor:
     """
     Extracts SoccerNet-compatible 2FPS `(T, 512)` ResNet-152 + PCA-512 feature matrices
-    directly from raw `.mp4` broadcast videos using ONNX Runtime CPU:
+    directly from raw `.mp4` broadcast videos using ONNX Runtime (CUDA GPU or low-RAM CPU):
       1. Resize BGR frame to `224x224` and subtract TF2 Caffe BGR mean `[103.939, 116.779, 123.68]`
       2. Forward NHWC `bgr_input` `[B, 224, 224, 3]` -> `features_2048` `[B, 2048]`
       3. Apply verified SoccerNet PCA-512 projection: `(f2048 - average - pca_mean) @ proj_matrix`
@@ -24,10 +40,11 @@ class SoccerNetVideoFeatureExtractor:
         resnet_onnx_path: Optional[str | Path] = None,
         pca_weights_path: Optional[str | Path] = None,
         target_fps: float = 2.0,
-        batch_size: int = 16,
+        batch_size: Optional[int] = None,
     ):
         root = Path(__file__).resolve().parent.parent
-        models_dir = root / "models"
+        env_models = os.environ.get("MODELS_DIR", "").strip()
+        models_dir = Path(env_models) if env_models else (root / "models")
         self.resnet_onnx_path = (
             Path(resnet_onnx_path)
             if resnet_onnx_path
@@ -39,7 +56,12 @@ class SoccerNetVideoFeatureExtractor:
             else (models_dir / "soccernet_pca512_tf2_weights.npz")
         )
         self.target_fps = float(target_fps)
-        self.batch_size = max(1, int(batch_size))
+        self.use_cuda = _cuda_available()
+        if batch_size is None:
+            # Adaptive batch size: 16 on CUDA GPU, 4 on CPU to prevent MemoryError
+            self.batch_size = 16 if self.use_cuda else 4
+        else:
+            self.batch_size = max(1, int(batch_size))
 
         self._ort_session: Any = None
         self._ort_input_name: str = "bgr_input"
@@ -49,6 +71,13 @@ class SoccerNetVideoFeatureExtractor:
 
     def is_available(self) -> bool:
         return self.resnet_onnx_path.exists() and self.pca_weights_path.exists()
+
+    def close(self) -> None:
+        self._ort_session = None
+        self._average = None
+        self._pca_mean = None
+        self._proj_matrix = None
+        gc.collect()
 
     def _ensure_loaded(self) -> None:
         if self._ort_session is not None and self._proj_matrix is not None:
@@ -60,13 +89,22 @@ class SoccerNetVideoFeatureExtractor:
 
         import onnxruntime as ort
 
+        avail = ort.get_available_providers()
+        use_gpu_ep = self.use_cuda and "CUDAExecutionProvider" in avail
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_gpu_ep else ["CPUExecutionProvider"]
+
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 4
+        opts.intra_op_num_threads = min(4, os.cpu_count() or 4)
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        if not use_gpu_ep:
+            # Disable ORT CPU arena retention to dramatically reduce peak RAM on long local CPU clips
+            opts.enable_cpu_mem_arena = False
+            opts.enable_mem_pattern = False
+
         sess = ort.InferenceSession(
             str(self.resnet_onnx_path),
             sess_options=opts,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
         self._ort_session = sess
         self._ort_input_name = sess.get_inputs()[0].name
@@ -108,6 +146,7 @@ class SoccerNetVideoFeatureExtractor:
             centered = np.asarray(feats_2048, dtype=np.float32) - self._average - self._pca_mean
             proj_512 = centered @ self._proj_matrix
             chunks.append(np.asarray(proj_512, dtype=np.float32))
+            del xb, feats_2048, centered, proj_512
 
         return np.ascontiguousarray(np.concatenate(chunks, axis=0), dtype=np.float32)
 

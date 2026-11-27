@@ -1,9 +1,12 @@
+import gc
 import json
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Dict, Any
 import cv2
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from .config import EngineConfig, FIFAPitchConfig
@@ -32,25 +35,22 @@ class MatchAnalysisPipeline:
         self.cfg = cfg
         self.pitch = FIFAPitchConfig()
         print("[Init] Loading Dual-YOLOv11 detector & 32-keypoint pose weights...")
-        self.detector = DualModelDetector(cfg)
-        self.team_classifier = SigLIPTeamClassifier(enable_siglip=cfg.enable_siglip)
-        print("[Init] Loading Model 4 Jersey Gate & offline OCR...")
-        self.jersey_recognizer = JerseyRecognizer(
-            onnx_path=cfg.jersey_legibility_onnx_path or None,
-            pt_path=cfg.jersey_legibility_pt_path or None,
-            legibility_threshold=cfg.jersey_legibility_threshold,
-            min_track_ocr_conf=cfg.jersey_min_track_ocr_conf,
-            parseq_min_crop_conf=cfg.jersey_parseq_min_crop_conf,
-            max_crops_per_track=cfg.jersey_max_crops_per_track,
-            torso_crop_box=cfg.jersey_torso_crop_box,
-            enable_ocr=cfg.enable_jersey_ocr,
-        )
-        self.feature_extractor = SoccerNetVideoFeatureExtractor(
-            resnet_onnx_path=cfg.resnet_onnx_path or None,
-            pca_weights_path=cfg.pca_weights_path or None,
-            target_fps=2.0,
-        )
-        self.action_spotter = ActionSpotter()
+        self.detector: Optional[DualModelDetector] = DualModelDetector(cfg)
+        # Stage 1b & Stage 2 models are initialized lazily AFTER detector unload
+        # to prevent peak RAM OOM on long CPU clips.
+        self.team_classifier: Optional[SigLIPTeamClassifier] = None
+        self.jersey_recognizer: Optional[JerseyRecognizer] = None
+        self.feature_extractor: Optional[SoccerNetVideoFeatureExtractor] = None
+        self.action_spotter: Optional[ActionSpotter] = None
+
+    @staticmethod
+    def _release_memory() -> None:
+        gc.collect()
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     @staticmethod
     def _crop_full_person(frame_bgr: np.ndarray, box: np.ndarray) -> Optional[np.ndarray]:
@@ -105,8 +105,12 @@ class MatchAnalysisPipeline:
             min_convex_hull_area_m2=self.cfg.min_convex_hull_area_m2,
         )
 
+        if self.detector is None:
+            print("[Init] Loading Dual-YOLOv11 detector & 32-keypoint pose weights...")
+            self.detector = DualModelDetector(self.cfg)
+
         # ======================================================================
-        # PASS 1: Detection, Tracking, Homography & Person Sampling
+        # PASS 1: Detection, Tracking, Homography & Bounded Person Sampling
         # ======================================================================
         frame_records = []
         raw_ball_xy = []
@@ -117,6 +121,13 @@ class MatchAnalysisPipeline:
         spotting_eff_fps = fps / float(spotting_stride)
         full_crop_stride = max(1, int(fps // 4))    # Sample full person crops ~4 Hz for Model 4
         pitch_stride = max(1, int(self.cfg.pitch_stride))
+
+        # Strict per-track memory caps so 30s-180s+ videos never accumulate unbounded crops in RAM
+        max_team_crops_per_track = 16
+        max_full_crops_per_track = max(16, int(self.cfg.jersey_max_crops_per_track) * 2)
+        max_total_jersey_samples = 240
+        team_crop_counts: Dict[int, int] = defaultdict(int)
+        full_crop_counts: Dict[int, int] = defaultdict(int)
 
         pbar = tqdm(range(total_frames), desc="Pass 1/2 (CV Detection + Tracking)", mininterval=0.25)
         for f_idx in pbar:
@@ -150,20 +161,31 @@ class MatchAnalysisPipeline:
                 crop = None
                 full_crop = None
                 c_cls = int(clss[i])
-                if c_cls == self.cfg.player_id:
-                    crop = self.team_classifier.crop_jersey(frame, boxes[i])
-                    if crop is not None and (f_idx % sample_stride == 0):
-                        jersey_samples.append(crop)
+                tid_i = int(tids[i])
+                if c_cls == self.cfg.player_id and (f_idx % sample_stride == 0):
+                    need_track_crop = team_crop_counts[tid_i] < max_team_crops_per_track
+                    need_global_sample = len(jersey_samples) < max_total_jersey_samples
+                    if need_track_crop or need_global_sample:
+                        cropped = SigLIPTeamClassifier.crop_jersey(frame, boxes[i])
+                        if cropped is not None:
+                            if need_track_crop:
+                                crop = cropped
+                                team_crop_counts[tid_i] += 1
+                            if need_global_sample:
+                                jersey_samples.append(cropped)
 
                 if (
                     self.cfg.enable_jersey_ocr
                     and c_cls in (self.cfg.player_id, self.cfg.goalkeeper_id)
                     and (f_idx % full_crop_stride == 0)
+                    and full_crop_counts[tid_i] < max_full_crops_per_track
                 ):
                     full_crop = self._crop_full_person(frame, boxes[i])
+                    if full_crop is not None:
+                        full_crop_counts[tid_i] += 1
 
                 entities.append({
-                    "track_id": int(tids[i]),
+                    "track_id": tid_i,
                     "cls": c_cls,
                     "conf": float(confs[i]),
                     "box": boxes[i],
@@ -181,6 +203,16 @@ class MatchAnalysisPipeline:
             })
 
         cap.release()
+
+        # Sequential Stage Memory Release: unload heavy YOLO models BEFORE Stage 1b ResNet-152
+        if self.detector is not None:
+            if hasattr(self.detector, "players_model"):
+                del self.detector.players_model
+            if hasattr(self.detector, "pitch_model"):
+                del self.detector.pitch_model
+            del self.detector
+            self.detector = None
+        self._release_memory()
 
         # Backfill any early frames before the first valid Homography so radar is populated
         first_valid = next((r for r in frame_records if r["H"] is not None), None)
@@ -203,30 +235,56 @@ class MatchAnalysisPipeline:
         broadcast_events = []
         broadcast_spotting_ms: Optional[float] = None
         broadcast_spotting_backend: Optional[str] = None
-        if self.cfg.enable_action_spotting and spotting_frames_bgr and self.feature_extractor.is_available():
-            print("[Stage 1b] Extracting ResNet-152 + PCA-512 features & running Model 3 ONNX...")
-            t_spot = time.perf_counter()
-            try:
-                feats_512 = self.feature_extractor.extract_from_frames(spotting_frames_bgr)
-                if len(feats_512) > 0:
-                    spot_res = self.action_spotter.spot_events(
-                        feats_512,
-                        half=1,
-                        fps=spotting_eff_fps,
-                        min_conf=self.cfg.action_spotting_min_conf,
-                        nms_window_sec=5.0,
-                    )
-                    clip_dur = round(len(frame_records) / max(1.0, fps), 2)
-                    broadcast_events = [
-                        ev for ev in spot_res.get("events", [])
-                        if float(ev.get("time_s", 0.0)) <= clip_dur + 0.25
-                    ]
-                    broadcast_spotting_backend = str(spot_res.get("backend_used") or "onnx_int8")
-                broadcast_spotting_ms = round((time.perf_counter() - t_spot) * 1000.0, 2)
-            except Exception as e:
-                print(f"[Stage 1b] Action Spotting skipped due to error: {e}")
-                broadcast_events = []
-                broadcast_spotting_backend = "error_fallback"
+        if self.cfg.enable_action_spotting and spotting_frames_bgr:
+            extractor = SoccerNetVideoFeatureExtractor(
+                resnet_onnx_path=self.cfg.resnet_onnx_path or None,
+                pca_weights_path=self.cfg.pca_weights_path or None,
+                target_fps=2.0,
+            )
+            if extractor.is_available():
+                print("[Stage 1b] Extracting ResNet-152 + PCA-512 features & running Model 3 ONNX...")
+                t_spot = time.perf_counter()
+                spotter: Optional[ActionSpotter] = None
+                try:
+                    feats_512 = extractor.extract_from_frames(spotting_frames_bgr)
+                    # Release 224x224 sampled frames & ResNet backbone immediately after extraction
+                    spotting_frames_bgr.clear()
+                    extractor.close()
+                    del extractor
+                    extractor = None
+                    self._release_memory()
+
+                    if len(feats_512) > 0:
+                        spotter = ActionSpotter()
+                        spot_res = spotter.spot_events(
+                            feats_512,
+                            half=1,
+                            fps=spotting_eff_fps,
+                            min_conf=self.cfg.action_spotting_min_conf,
+                            nms_window_sec=5.0,
+                        )
+                        clip_dur = round(len(frame_records) / max(1.0, fps), 2)
+                        broadcast_events = [
+                            ev for ev in spot_res.get("events", [])
+                            if float(ev.get("time_s", 0.0)) <= clip_dur + 0.25
+                        ]
+                        broadcast_spotting_backend = str(spot_res.get("backend_used") or "onnx_int8")
+                    del feats_512
+                    broadcast_spotting_ms = round((time.perf_counter() - t_spot) * 1000.0, 2)
+                except Exception as e:
+                    print(f"[Stage 1b] Action Spotting skipped due to error: {e}")
+                    broadcast_events = []
+                    broadcast_spotting_backend = "error_fallback"
+                finally:
+                    if extractor is not None:
+                        extractor.close()
+                    if spotter is not None:
+                        spotter.close()
+                    spotting_frames_bgr.clear()
+                    self._release_memory()
+            else:
+                broadcast_spotting_backend = "extractor_unavailable"
+                spotting_frames_bgr.clear()
         elif self.cfg.enable_action_spotting:
             broadcast_spotting_backend = "extractor_unavailable"
 
@@ -234,21 +292,40 @@ class MatchAnalysisPipeline:
         # STAGE 2: Ball Interpolation, Team Classification & Model 4 Jersey OCR
         # ======================================================================
         print("[Stage 2] Clustering Teams & Running Model 4 Jersey Recognition...")
-        self.team_classifier.fit(jersey_samples)
+        team_classifier = SigLIPTeamClassifier(enable_siglip=self.cfg.enable_siglip)
+        team_classifier.fit(jersey_samples)
         stabilize_team_assignments(
             frame_records,
-            self.team_classifier,
+            team_classifier,
             player_id=self.cfg.player_id,
             goalkeeper_id=self.cfg.goalkeeper_id,
             referee_id=self.cfg.referee_id,
         )
+        jersey_samples.clear()
+        team_classifier.close()
+        del team_classifier
+        self._release_memory()
 
         if self.cfg.enable_jersey_ocr:
-            jersey_assignments, jersey_diag = self.jersey_recognizer.recognize_tracks(
+            print("[Stage 2] Loading Model 4 Jersey Gate & OCR...")
+            jersey_recognizer = JerseyRecognizer(
+                onnx_path=self.cfg.jersey_legibility_onnx_path or None,
+                pt_path=self.cfg.jersey_legibility_pt_path or None,
+                legibility_threshold=self.cfg.jersey_legibility_threshold,
+                min_track_ocr_conf=self.cfg.jersey_min_track_ocr_conf,
+                parseq_min_crop_conf=self.cfg.jersey_parseq_min_crop_conf,
+                max_crops_per_track=self.cfg.jersey_max_crops_per_track,
+                torso_crop_box=self.cfg.jersey_torso_crop_box,
+                enable_ocr=self.cfg.enable_jersey_ocr,
+            )
+            jersey_assignments, jersey_diag = jersey_recognizer.recognize_tracks(
                 frame_records,
                 player_id=self.cfg.player_id,
                 goalkeeper_id=self.cfg.goalkeeper_id,
             )
+            jersey_recognizer.close()
+            del jersey_recognizer
+            self._release_memory()
         else:
             # Clear temporary crops if OCR is explicitly disabled
             for rec in frame_records:

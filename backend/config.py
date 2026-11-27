@@ -1,5 +1,6 @@
 """TacticalVision AI — Backend Configuration (Pydantic v2 Settings)."""
 
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -23,6 +24,14 @@ class Settings(BaseSettings):
 
     # Remote GPU worker (optional — empty string = disabled)
     remote_gpu_worker_url: str = ""
+
+    def get_default_remote_gpu_url(self) -> str:
+        """Resolve default remote GPU URL from TV_REMOTE_GPU_WORKER_URL or REMOTE_GPU_URL."""
+        return (
+            self.remote_gpu_worker_url
+            or os.environ.get("REMOTE_GPU_URL", "")
+            or os.environ.get("TV_REMOTE_GPU_WORKER_URL", "")
+        ).strip()
 
     # CORS
     frontend_origin: str = "http://localhost:3000"
