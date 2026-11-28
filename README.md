@@ -42,12 +42,39 @@
 | ![War Room — Broadcast Video & 60FPS Radar](docs/assets/02_war_room_broadcast.webp) | ![War Room — Dual 2D Radar Sync & Player Spotlight](docs/assets/03_war_room_dual_radar.webp) |
 | <sub>مزامنة إطار بإطار بين فيديو البث (`1080p · 25 FPS`) ورادار `PitchCanvas` التفاعلي مع `6` طبقات تكتيكية وشريط الأحداث.</sub> | <sub>تطابق `1:1` بين `tactical_radar.mp4` (`PnLCalib 3D + Pass 1.5`) والرادار التفاعلي مع تفعيل مفتّش اللاعب `#15` ومساره.</sub> |
 
+| مقارنة توازن الفريقين (`Head-to-Head Team Comparison`) | شبكة التمريرات المنحنية والتهديد المتوقع (`D3 Pass Network & xT`) |
+| :---: | :---: |
+| ![Team Comparison Balance](docs/assets/05_team_comparison_balance.webp) | ![D3 Curved Pass Network & xT Build-Up](docs/assets/06_d3_pass_network.webp) |
+| <sub>مقارنة مباشرة بين الفريقين في الاستحواذ، السيطرة المكانية (`Voronoi`)، التمريرات، ومساحة التراص (`Convex Hull`) خلال سيناريو الضغط العالي واسترجاع الكرة.</sub> | <sub>شبكة تمرير تفاعلية بـ `D3.js` تُبرز مسارات البناء المنحنية وقيم التهديد المتوقع (`Expected Threat — xT`) على ملعب فيفا المتري.</sub> |
+
+<details>
+<summary>📸 استعراض باقي شاشات مختبر D3 والتشغيل الهجين ومكتبة المباريات (7 شاشات إضافية)</summary>
+
+<br/>
+
+| مقارنة اللاعبين السداسية وملف السرعة (`6-Axis D3 Radar & Speed Profile`) | بطاقة مفتّش اللاعب وتعديل الهوية اليدوي (`Player Inspector & Coach Override`) |
+| :---: | :---: |
+| ![D3 6-Axis Player Comparison](docs/assets/07_d3_player_comparison.webp) | ![Player Inspector & Coach Override](docs/assets/08_player_inspector_override.webp) |
+| <sub>مقارنة سداسية المحاور (`#19` مقابل `#8`) عبر المسافة، السرعة القصوى، التمريرات، والـ `xT` مرفقة بمنحنى السرعة اللحظية بـ `D3.js`.</sub> | <sub>بطاقة تحليل فردية للاعب `#70` مع إمكانية تعديل رقم القميص يدوياً (`Coach Override`) ومزامنته فورياً عبر الرادار وشبكة التمريرات.</sub> |
+
+| جدول الأداء البدني والتكتيكي والتصدير (`Leaderboard & CSV/JSON Export`) | ارتفاع الكتلة الدفاعية وضغط الخطوط (`Defensive Block Height & Compression`) |
+| :---: | :---: |
+| ![Physical & Tactical Player Leaderboard](docs/assets/09_analytics_leaderboard.webp) | ![Defensive Block Height & Line Compression](docs/assets/10_defensive_block_lines.webp) |
+| <sub>جدول اللاعبين القابل للفرز (المسافة، السرعة القصوى، الانطلاقات، التمريرات، `xT`) مع تصدير مباشر بصيغتي `CSV` و`JSON`.</sub> | <sub>مخطط زمني لعمق خط الدفاع الأخير لكل فريق (`def_x`) وتراص الكتلة الدفاعية على مدار زمن المباراة.</sub> |
+
+| نافذة الرفع والتشغيل الهجين (`Hybrid CPU / Kaggle GPU Upload Modal`) | تتبع مراحل خط الأنابيب والترميز الحي (`Live 4-Stage Pipeline & H.264`) |
+| :---: | :---: |
+| ![Hybrid CPU & Kaggle GPU Upload Modal](docs/assets/11_hybrid_upload_modal.webp) | ![Live 4-Stage Pipeline Progress Modal](docs/assets/12_live_pipeline_progress.webp) |
+| <sub>رفع الفيديو الكامل دون اقتطاع مع التبديل السلس بين التشغيل المحلي (`CPU`) والتفويض السحابي إلى `Kaggle GPU (PnLCalib 3D)` وفحص الاتصال الحي.</sub> | <sub>متابعة حية لمراحل المعالجة الأربع (الرصد، التصنيف، الحسابات التكتيكية، وتصيير وترميـز `H.264`) مع شريط تقدم دقيق وسجل مباشر.</sub> |
+
 <div align="center">
 
 ![TacticalVision AI — Match Library & Multi-Match KPI Cards](docs/assets/04_analytics_lab_suite.webp)
 <sub><b>مكتبة المباريات وبطاقات التحليل المتعدد (`Match Library & KPI Suite`)</b> — استعراض المباريات المحلَّلة (`Serie a goal`, `0bfacc_0`) مع مؤشرات الاستحواذ، السيطرة المكانية، التمريرات، والانتقال الفوري لغرفة العمليات.</sub>
 
 </div>
+
+</details>
 
 ---
 
@@ -344,7 +371,7 @@ TacticalVision-AI/
 ├── docs/                             # التوثيق الفني، نوتبوك Kaggle، والأصول البصرية
 │   ├── kaggle_gpu_worker.ipynb       # نوتبوك Kaggle الجاهز (تثبيت تلقائي لـ PnLCalib 3D + SV_kp/SV_lines + Cloudflare Tunnel)
 │   ├── MODELS.md                     # بطاقات النماذج العلمية ومقاييس ONNX INT8 التفصيلية
-│   └── assets/                       # 4 لقطات استوديو عالية الدقة بصيغة WebP (82–127 KB لكل صورة)
+│   └── assets/                       # 12 لقطة استوديو عالية الدقة بصيغة WebP (01..12)
 ├── artifacts/models_meta/            # سجل النماذج، العتبات المعايرة، وتقارير المقاييس
 ├── outputs/match_0*/                 # عينات تليميتري جاهزة للاستعراض الفوري دون أوزان
 └── tests/                            # 45 اختباراً آلياً شاملاً (pytest)
