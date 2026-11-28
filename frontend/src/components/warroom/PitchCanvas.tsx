@@ -115,11 +115,16 @@ export function PitchCanvas({
         if (interpFrame) {
           lastInterpRef.current = interpFrame;
 
-          // Build ball trail strictly from clean past window (works identically when seeking or scrubbing!)
+          // Build short ~0.55s ball comet trail strictly from valid past frames
           const ballTrail: BallHistoryPoint[] = [];
-          const trailStart = Math.max(0, frameIdx - 16);
+          const trailWindow = Math.max(5, Math.round(0.55 * fps));
+          const trailStart = Math.max(0, frameIdx - trailWindow);
           for (let i = trailStart; i <= frameIdx; i++) {
             const bf = stabilized.frames[i];
+            if (!bf?.homographyValid) {
+              ballTrail.length = 0;
+              continue;
+            }
             if (bf?.ball) {
               ballTrail.push({
                 x: bf.ball[0],
@@ -128,7 +133,7 @@ export function PitchCanvas({
               });
             }
           }
-          if (interpFrame.ball) {
+          if (interpFrame.homographyValid && interpFrame.ball) {
             ballTrail.push({
               x: interpFrame.ball[0],
               y: interpFrame.ball[1],
@@ -189,7 +194,8 @@ export function PitchCanvas({
                 interpFrame.f,
                 vp,
                 hoveredIdRef.current,
-                overrides
+                overrides,
+                fps
               );
             }
           }

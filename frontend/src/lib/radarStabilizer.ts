@@ -549,7 +549,7 @@ export function stabilizeTelemetry(
     }
   }
 
-  // ── 3. Ball Outlier Rejection, Corner Snap Guard & 3-Tap Smoothing ──
+  // ── 3. Physics-Gated Ball Outlier Rejection, Short-Gap Bridging & 5-Tap Smoothing ──
   interface RawBallObs {
     idx: number;
     x: number;
@@ -557,55 +557,88 @@ export function stabilizeTelemetry(
   }
   const ballObs: RawBallObs[] = [];
   for (let i = 0; i < nFrames; i++) {
-    if (isGlitchFrame[i]) continue;
+    if (rawFrames[i].hv === false) continue;
     const b = rawFrames[i].ball;
     if (!b || b.length < 2 || !Number.isFinite(b[0]) || !Number.isFinite(b[1])) continue;
-    if (isSentinelOob(b[0], b[1])) continue;
-    const bx = Math.max(0, Math.min(PITCH_L, b[0]));
-    const by = Math.max(0, Math.min(PITCH_W, b[1]));
-    const isCornerSnap =
-      (bx <= 0.3 || bx >= PITCH_L - 0.3) && (by <= 0.3 || by >= PITCH_W - 0.3);
-    if (isCornerSnap && ballObs.length > 0) {
+    // Strict OOB discard — never clamp outliers onto (0,0) / (105,68)
+    if (b[0] < -1.5 || b[0] > PITCH_L + 1.5 || b[1] < -1.5 || b[1] > PITCH_W + 1.5) continue;
+    const bx = Math.max(0.1, Math.min(PITCH_L - 0.1, b[0]));
+    const by = Math.max(0.1, Math.min(PITCH_W - 0.1, b[1]));
+    const isBorderSnap =
+      bx <= 0.25 || bx >= PITCH_L - 0.25 || by <= 0.25 || by >= PITCH_W - 0.25;
+    if (isBorderSnap && ballObs.length > 0) {
       const prevB = ballObs[ballObs.length - 1];
       if (Math.hypot(bx - prevB.x, by - prevB.y) > 8.0) continue;
     }
     ballObs.push({ idx: i, x: bx, y: by });
   }
 
-  // Drop isolated ball spikes
+  const ballStepOk = (a: RawBallObs, b: RawBallObs, maxMps = 38.0): boolean => {
+    const df = Math.max(1, Math.abs(b.idx - a.idx));
+    const dt = df / fps;
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    if (df === 1 && d > Math.min(10.0, Math.max(2.2, maxMps * dt))) return false;
+    return d <= Math.max(2.2, maxMps * dt);
+  };
+
+  // Drop 1-2 frame ball teleport false positives
   let cleanBallObs: RawBallObs[] = [];
   if (ballObs.length > 0) {
-    cleanBallObs = [ballObs[0]];
-    for (let k = 1; k < ballObs.length; k++) {
+    let startK = 0;
+    while (startK + 2 < ballObs.length) {
+      if (!ballStepOk(ballObs[startK], ballObs[startK + 1]) && ballStepOk(ballObs[startK + 1], ballObs[startK + 2])) {
+        startK++;
+        continue;
+      }
+      break;
+    }
+    cleanBallObs = [ballObs[startK]];
+    for (let k = startK + 1; k < ballObs.length; k++) {
       const prev = cleanBallObs[cleanBallObs.length - 1];
       const cur = ballObs[k];
-      const dtPrev = Math.max(1, cur.idx - prev.idx);
-      const dPrev = Math.hypot(cur.x - prev.x, cur.y - prev.y);
-      if (dPrev > Math.max(7.5, dtPrev * 2.4)) {
-        if (k < ballObs.length - 1) {
-          const nxt = ballObs[k + 1];
-          const dtNext = Math.max(1, nxt.idx - cur.idx);
-          const dNext = Math.hypot(nxt.x - cur.x, nxt.y - cur.y);
-          if (dNext > Math.max(7.5, dtNext * 2.4)) {
-            continue;
+      if (ballStepOk(prev, cur)) {
+        cleanBallObs.push(cur);
+        continue;
+      }
+      // Accept jump ONLY if corroborated by coherent subsequent frames
+      let coherent = false;
+      if (k + 1 < ballObs.length) {
+        const nxt = ballObs[k + 1];
+        const dtNext = (nxt.idx - cur.idx) / fps;
+        if (ballStepOk(cur, nxt) && dtNext <= 0.25) {
+          if (cur.idx - prev.idx <= 3) {
+            if (k + 2 < ballObs.length && ballStepOk(nxt, ballObs[k + 2])) {
+              coherent = true;
+            }
+          } else {
+            coherent = true;
           }
-        } else {
-          continue;
         }
       }
-      cleanBallObs.push(cur);
+      if (coherent) {
+        cleanBallObs.push(cur);
+      }
     }
   }
 
   const ballTimeline: Array<[number, number] | null> = new Array(nFrames).fill(null);
+  const maxBallGapFrames = Math.min(10, Math.max(3, Math.round(0.38 * fps)));
   const bridgedBall: RawBallObs[] = [];
   for (let k = 0; k < cleanBallObs.length; k++) {
     const cur = cleanBallObs[k];
     if (k > 0) {
       const prev = cleanBallObs[k - 1];
       const gap = cur.idx - prev.idx;
+      const dt = gap / fps;
       const dist = Math.hypot(cur.x - prev.x, cur.y - prev.y);
-      if (gap > 1 && gap <= 8 && dist <= Math.max(5.0, gap * 2.4)) {
+      let hasPausedInGap = false;
+      for (let t = prev.idx + 1; t < cur.idx; t++) {
+        if (rawFrames[t].hv === false) {
+          hasPausedInGap = true;
+          break;
+        }
+      }
+      if (!hasPausedInGap && gap > 1 && gap <= maxBallGapFrames && dt > 0 && dist / dt <= 35.0) {
         for (let g = 1; g < gap; g++) {
           const r = g / gap;
           bridgedBall.push({

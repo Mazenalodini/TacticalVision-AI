@@ -717,4 +717,141 @@ def test_homography_law2_blocks_right_box_midfield_mislabel_even_with_many_inlie
     assert hom.H is None
 
 
+def test_shot_level_homography_outlier_rejection_and_savgol_smoothing():
+    """Fix 1: Pass 1.5 rejects 1-3 frame PnLCalib spikes (> 6m) and smooths wobble via zero-phase Savitzky-Golay."""
+    from engine.homography import smooth_shot_homographies
+
+    pitch = FIFAPitchConfig()
+    rng = np.random.default_rng(123)
+    n_frames = 45
+    fps = 25.0
+    frame_records = []
+
+    # True smooth broadcast pan: x_m(u) = (25 + 0.35 * f) + 0.045 * u, y_m(v) = 8 + 0.075 * v
+    for f in range(n_frames):
+        tx = 25.0 + 0.35 * f + float(rng.normal(0.0, 0.55))
+        ty = 8.0 + float(rng.normal(0.0, 0.30))
+        # Inject a severe 2-frame PnLCalib horizontal spike (-22m!) at frames 20..21
+        if f in (20, 21):
+            tx -= 22.0
+        H = np.array([
+            [0.045, 0.0, tx],
+            [0.0, 0.075, ty],
+            [0.0, 0.0, 1.0],
+        ], dtype=np.float64)
+        ents = [
+            {"track_id": i + 1, "cls": 2, "team": i % 2, "box": np.array([250 + i * 90, 260, 285 + i * 90, 360], np.float32), "pitch_xy": None}
+            for i in range(8)
+        ]
+        frame_records.append({
+            "frame_idx": f,
+            "H": H,
+            "H_inv": np.linalg.inv(H),
+            "homography_valid": True,
+            "is_scene_cut": False,
+            "homography_reset": False,
+            "entities": ents,
+        })
+
+    # Measure BEFORE max jump at spike frame 20
+    p_before = [float(np.median([ (frame_records[f]["H"][0,0]*580 + frame_records[f]["H"][0,2]) ])) for f in range(n_frames)]
+    max_jump_before = max(abs(p_before[f] - p_before[f - 1]) for f in range(1, n_frames))
+    assert max_jump_before > 18.0
+
+    stats = smooth_shot_homographies(frame_records, pitch, img_w=1280, img_h=720, fps=fps)
+    assert stats["shots_smoothed"] == 1
+    assert stats["outliers_replaced"] >= 2
+
+    med_xs_after = [float(np.median([e["pitch_xy"][0] for e in rec["entities"]])) for rec in frame_records]
+    diffs_after = [abs(med_xs_after[f] - med_xs_after[f - 1]) for f in range(1, n_frames)]
+    assert max(diffs_after) < 0.9, f"Spike survived Savitzky-Golay smoothing: max jump={max(diffs_after):.2f}m"
+    assert float(np.mean(diffs_after)) < 0.45
+
+
+def test_physics_gated_ball_no_corner_clamp_teleport_rejection_and_trail_break():
+    """Fix 2: OOB balls are discarded (never corner-clamped), 1-2 frame teleports rejected, short gaps bridged, trail breaks cleanly."""
+    from engine.tactics import filter_and_interpolate_ball_pitch
+
+    pitch = FIFAPitchConfig()
+    fps = 25.0
+    n = 30
+    raw: list = [None] * n
+    # Clean ball moving steadily across midfield: x = 40 + 0.6 * f, y = 34.0
+    for f in range(n):
+        raw[f] = np.array([40.0 + 0.6 * f, 34.0], dtype=np.float32)
+
+    # Inject OOB outlier (must be discarded -> interpolated, NEVER clamped to (0,0) or (105,68)!)
+    raw[5] = np.array([-18.0, -9.0], dtype=np.float32)
+    raw[6] = np.array([135.0, 92.0], dtype=np.float32)
+    # Inject 1-frame corner-clamp teleport to (0.0, 0.0) and (105.0, 68.0)
+    raw[12] = np.array([0.0, 0.0], dtype=np.float32)
+    raw[18] = np.array([105.0, 68.0], dtype=np.float32)
+    # Inject 4-frame occlusion dropout (frames 22..25) -> MUST be smoothly bridged!
+    for f in range(22, 26):
+        raw[f] = None
+
+    clean = filter_and_interpolate_ball_pitch(raw, fps=fps, pitch_length=pitch.length, pitch_width=pitch.width)
+    # All 30 frames should be smoothly recovered with ZERO corner clamps and ZERO jumps > 2.5m!
+    assert all(p is not None for p in clean), "Short gaps after outlier rejection were not smoothly bridged"
+    for f, p in enumerate(clean):
+        assert 35.0 <= float(p[0]) <= 62.0, f"Frame {f} ball escaped valid corridor: {p}"
+        assert 30.0 <= float(p[1]) <= 38.0, f"Frame {f} ball clamped/escaped Y: {p}"
+        if f > 0:
+            assert float(np.linalg.norm(p - clean[f - 1])) < 2.5
+
+    # Renderer discontinuous trail break: two points 60m apart must NEVER draw a connecting line across pitch center!
+    cfg = EngineConfig(players_model_path="", pitch_model_path="", enable_siglip=False, enable_jersey_ocr=False)
+    renderer = BroadcastRenderer(cfg, pitch)
+    rec_a = {"frame_idx": 0, "homography_valid": True, "entities": [], "ball_pitch_xy": np.array([10.0, 34.0], np.float32), "voronoi_grid": None, "hulls": {}, "def_lines": {}, "voronoi_metrics": {}}
+    rec_b = {"frame_idx": 1, "homography_valid": True, "entities": [], "ball_pitch_xy": np.array([95.0, 34.0], np.float32), "voronoi_grid": None, "hulls": {}, "def_lines": {}, "voronoi_metrics": {}}
+    renderer.draw_radar_frame(rec_a, fps=25.0)
+    img_b = renderer.draw_radar_frame(rec_b, fps=25.0)
+    # Check midpoint (x=52.5, y=34.0) is NOT painted bright gold/green laser line (stays dark turf/white center spot)
+    mx, my = renderer._m_to_radar(50.0, 34.0)
+    px_bgr = img_b[my, mx]
+    assert int(px_bgr[2]) < 120, f"Discontinuous jump drew a laser line across midfield! BGR={px_bgr}"
+
+
+def test_calibrated_open_play_sprint_detection_with_1frame_blink():
+    """Fix 3: Sustained >= 6.2 m/s (22.3 km/h) for >= 0.55s with 1-frame blink triggers 1 sprint; spikes & short bursts yield 0."""
+    cfg = EngineConfig(players_model_path="", pitch_model_path="", enable_siglip=False, enable_jersey_ocr=False)
+    pitch = FIFAPitchConfig()
+    fps = 25.0
+    eng = TacticalAnalyticsEngine(cfg, pitch, fps=fps)
+    H_id = np.eye(3, dtype=np.float32)
+
+    # Track 1: 6.8 m/s (24.5 km/h) run for 1.0s (25 frames) with a 1-frame blink at f=32 -> MUST log 1 sprint!
+    # Track 2: 0.36s (9 frames < 0.55s=14 frames) brief burst at 7.5 m/s -> MUST log 0 sprints!
+    frame_records = []
+    x1, x2 = 15.0, 15.0
+    for f in range(90):
+        x1 += (6.8 / fps) if (20 <= f <= 48) else (1.5 / fps)
+        x2 += (7.5 / fps) if (30 <= f < 39) else (1.5 / fps)
+        ents = [
+            {"track_id": 2, "cls": cfg.player_id, "team": 1, "conf": 0.9, "box": np.array([10, 10, 30, 60], np.float32), "pitch_xy": np.array([x2, 46.0], np.float32)},
+        ]
+        if f != 32:  # 1-frame tracker occlusion blink right in the middle of Track 1's sprint!
+            ents.append(
+                {"track_id": 1, "cls": cfg.player_id, "team": 0, "conf": 0.9, "box": np.array([10, 10, 30, 60], np.float32), "pitch_xy": np.array([x1, 22.0], np.float32)}
+            )
+        frame_records.append({
+            "frame_idx": f,
+            "H": H_id,
+            "H_inv": H_id,
+            "homography_valid": True,
+            "is_scene_cut": False,
+            "homography_reset": False,
+            "ball_detected": False,
+            "ball_xy": None,
+            "ball_pitch_xy": None,
+            "entities": ents,
+        })
+
+    tel = eng.analyze(frame_records)
+    by_tid = {p["track_id"]: p["sprints"] for p in tel["players"]}
+    assert by_tid[1] == 1, f"Real open-play 6.8 m/s sprint with 1-frame blink missed: {by_tid}"
+    assert by_tid[2] == 0, f"Short 0.36s burst falsely logged sprint: {by_tid}"
+
+
+
 

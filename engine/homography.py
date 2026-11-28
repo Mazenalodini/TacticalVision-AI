@@ -17,9 +17,10 @@ Implements 4 industry-standard geometric invariants (SkillCorner / TRACAB / Seco
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
+from scipy.signal import savgol_filter
 from scipy.spatial import ConvexHull, QhullError
 
 from .config import FIFAPitchConfig
@@ -735,3 +736,208 @@ class StabilizedHomography:
             "stability_rate_pct": round(100.0 * self.valid_updates / max(1, total), 2),
             "mean_inlier_reproj_error_m": round(float(np.mean(self.reproj_errors_m)), 3) if self.reproj_errors_m else None,
         }
+
+
+def smooth_shot_homographies(
+    frame_records: List[dict],
+    pitch_cfg: FIFAPitchConfig,
+    img_w: int,
+    img_h: int,
+    fps: float = 25.0,
+    outlier_thresh_m: float = 6.0,
+    outlier_window_radius: int = 7,
+) -> Dict[str, Any]:
+    """
+    Offline Pass 1.5 — Zero-Phase Shot-Level Homography Outlier Rejection & Smoothing.
+
+    Segments `frame_records` into continuous camera shots split at genuine scene cuts
+    (`is_scene_cut == True`) or invalid/paused spans (`H is None` or `homography_valid == False`).
+    Within each continuous shot:
+      1. Normalizes `H_t` (`H_t / H_t[2,2]`) and evaluates image-center pitch point `(cx_t, cy_t)`
+         plus local scale `dx_du_t`.
+      2. Flags isolated 1-3 frame calibration glitches deviating `> outlier_thresh_m` (6.0m)
+         from the rolling `+-7`-frame median (or scale deviating > 45%), replacing them via
+         linear interpolation of normalized `H` between nearest clean neighbors.
+      3. Applies zero-phase Savitzky-Golay smoothing (window ~0.6s odd, polyorder=2;
+         moving-average fallback on very short shots) across the shot.
+      4. Validates every smoothed `H_t` against Broadcast Monotonicity (`dX/du > 0`, `det(J) > 0`)
+         and Player In-Bounds before committing `H`, `H_inv`, and re-projecting all player `pitch_xy`.
+    """
+    n = len(frame_records)
+    if n == 0:
+        return {"shots_smoothed": 0, "outliers_replaced": 0, "frames_smoothed": 0}
+
+    validator = StabilizedHomography(pitch_cfg)
+    ref_x = float(img_w) * 0.5
+    ref_y = float(img_h) * 0.55
+
+    # 1. Partition into continuous valid camera shots
+    shots: List[List[int]] = []
+    cur_shot: List[int] = []
+    for idx, rec in enumerate(frame_records):
+        H = rec.get("H")
+        hv = bool(rec.get("homography_valid", H is not None))
+        is_cut = bool(rec.get("is_scene_cut", False))
+        if is_cut and cur_shot:
+            shots.append(cur_shot)
+            cur_shot = []
+        if hv and H is not None and np.all(np.isfinite(H)) and abs(float(H[2, 2])) > 1e-8:
+            cur_shot.append(idx)
+        else:
+            if cur_shot:
+                shots.append(cur_shot)
+                cur_shot = []
+    if cur_shot:
+        shots.append(cur_shot)
+
+    shots_smoothed = 0
+    outliers_replaced = 0
+    frames_smoothed = 0
+
+    for shot in shots:
+        m = len(shot)
+        if m < 3:
+            continue
+
+        # Normalize H matrices along the shot
+        H_seq = np.zeros((m, 3, 3), dtype=np.float64)
+        cx_arr = np.zeros(m, dtype=np.float64)
+        cy_arr = np.zeros(m, dtype=np.float64)
+        dx_arr = np.zeros(m, dtype=np.float64)
+        valid_jac = np.ones(m, dtype=bool)
+
+        for k, f_idx in enumerate(shot):
+            Hk = np.asarray(frame_records[f_idx]["H"], dtype=np.float64)
+            Hk = Hk / float(Hk[2, 2])
+            H_seq[k] = Hk
+            jinfo = validator._evaluate_jacobian(Hk, ref_x, ref_y)
+            if jinfo is None:
+                valid_jac[k] = False
+            else:
+                dx_du, _dy_dv, _det, cx_m, cy_m = jinfo
+                cx_arr[k] = cx_m
+                cy_arr[k] = cy_m
+                dx_arr[k] = dx_du
+
+        # 2. Rolling-median outlier keyframe detection (catches 1-3 frame PnLCalib spikes!)
+        is_outlier = ~valid_jac
+        rad = max(2, int(outlier_window_radius))
+        for k in range(m):
+            if is_outlier[k]:
+                continue
+            lo = max(0, k - rad)
+            hi = min(m, k + rad + 1)
+            win_valid = valid_jac[lo:hi]
+            if int(np.sum(win_valid)) < 3:
+                continue
+            med_cx = float(np.median(cx_arr[lo:hi][win_valid]))
+            med_cy = float(np.median(cy_arr[lo:hi][win_valid]))
+            med_dx = float(np.median(dx_arr[lo:hi][win_valid]))
+            dist_c = float(np.hypot(cx_arr[k] - med_cx, cy_arr[k] - med_cy))
+            scale_dev = abs(dx_arr[k] - med_dx) / max(1e-5, abs(med_dx))
+            if dist_c > outlier_thresh_m or scale_dev > 0.45:
+                is_outlier[k] = True
+
+        # Replace flagged outliers via linear interpolation between nearest clean frames
+        clean_indices = np.where(~is_outlier)[0]
+        H_clean = H_seq.copy()
+        if len(clean_indices) >= 2 and np.any(is_outlier):
+            for k in np.where(is_outlier)[0]:
+                pos = int(np.searchsorted(clean_indices, k))
+                if pos == 0:
+                    H_clean[k] = H_seq[clean_indices[0]]
+                elif pos >= len(clean_indices):
+                    H_clean[k] = H_seq[clean_indices[-1]]
+                else:
+                    i0 = int(clean_indices[pos - 1])
+                    i1 = int(clean_indices[pos])
+                    alpha = float(k - i0) / float(max(1, i1 - i0))
+                    H_interp = (1.0 - alpha) * H_seq[i0] + alpha * H_seq[i1]
+                    if abs(float(H_interp[2, 2])) > 1e-8:
+                        H_interp = H_interp / float(H_interp[2, 2])
+                    H_clean[k] = H_interp
+                outliers_replaced += 1
+
+        # 3. Zero-phase Savitzky-Golay smoothing across the continuous shot
+        target_win = max(5, int(round(0.60 * max(5.0, float(fps)))))
+        if target_win % 2 == 0:
+            target_win += 1
+        max_odd = m if (m % 2 == 1) else (m - 1)
+        win_len = min(max_odd, target_win)
+
+        H_flat = H_clean.reshape(m, 9)
+        if win_len >= 5:
+            H_smooth_flat = savgol_filter(H_flat, window_length=win_len, polyorder=2, axis=0, mode="interp")
+        elif m >= 3:
+            # Short shot (3-4 frames): gentle 3-tap zero-phase moving average
+            kern = np.array([0.25, 0.50, 0.25], dtype=np.float64)
+            H_smooth_flat = np.empty_like(H_flat)
+            for col in range(9):
+                padded = np.pad(H_flat[:, col], (1, 1), mode="edge")
+                H_smooth_flat[:, col] = np.convolve(padded, kern, mode="valid")
+        else:
+            H_smooth_flat = H_flat
+
+        H_smooth_seq = H_smooth_flat.reshape(m, 3, 3)
+        shots_smoothed += 1
+
+        # 4. Validate each smoothed H against Monotonicity + Player In-Bounds, then re-project players
+        for k, f_idx in enumerate(shot):
+            rec = frame_records[f_idx]
+            Hs = H_smooth_seq[k]
+            if not np.all(np.isfinite(Hs)) or abs(float(Hs[2, 2])) < 1e-8:
+                Hs = H_clean[k]
+            else:
+                Hs = Hs / float(Hs[2, 2])
+
+            ents = rec.get("entities", [])
+            feet_px = (
+                np.asarray(
+                    [[(float(e["box"][0]) + float(e["box"][2])) * 0.5, float(e["box"][3])] for e in ents],
+                    dtype=np.float32,
+                )
+                if ents
+                else None
+            )
+
+            # Verify smoothed H still preserves broadcast monotonicity & player in-bounds
+            use_H = Hs
+            j_s = validator._evaluate_jacobian(Hs, ref_x, ref_y)
+            ok_s = False
+            if j_s is not None:
+                dx_s, dy_s, det_s, _cx_s, _cy_s = j_s
+                if (
+                    det_s > 0.0
+                    and validator._MIN_DX_DU <= dx_s <= validator._MAX_DX_DU
+                    and validator._MIN_DY_DV <= dy_s <= validator._MAX_DY_DV
+                ):
+                    inb_ok, _, _ = validator._validate_player_inbounds(Hs, feet_px, min_inbounds_ratio=0.60)
+                    ok_s = inb_ok
+            if not ok_s:
+                use_H = H_clean[k]
+
+            try:
+                use_H_inv = np.linalg.inv(use_H)
+            except np.linalg.LinAlgError:
+                continue
+
+            rec["H"] = use_H.copy()
+            rec["H_inv"] = use_H_inv.copy()
+            rec["homography_valid"] = True
+            # Inside a continuous smooth shot (k > 0), clear transient reset flags so sprints aren't falsely wiped
+            if k > 0 and not rec.get("is_scene_cut", False):
+                rec["homography_reset"] = False
+
+            if feet_px is not None and len(feet_px) > 0:
+                validator.H = use_H
+                mapped = validator.image_to_pitch(feet_px)
+                if mapped is not None:
+                    for e, pt in zip(ents, mapped):
+                        e["pitch_xy"] = pt.copy()
+            frames_smoothed += 1
+
+    return {
+        "shots_smoothed": shots_smoothed,
+        "outliers_replaced": outliers_replaced,
+        "frames_smoothed": frames_smoothed,
+    }

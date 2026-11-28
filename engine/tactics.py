@@ -72,6 +72,193 @@ def bridge_ball_pitch_trajectory(
     return out
 
 
+def filter_and_interpolate_ball_pitch(
+    raw_ball_pitch: List[Optional[np.ndarray]],
+    fps: float,
+    pitch_length: float = 105.0,
+    pitch_width: float = 68.0,
+    invalid_mask: Optional[List[bool]] = None,
+    max_speed_mps: float = 38.0,
+    max_interp_speed_mps: float = 35.0,
+    max_interp_sec: float = 0.40,
+    max_interp_frames: int = 8,
+) -> List[Optional[np.ndarray]]:
+    """
+    Offline Physics-Gated Ball Trajectory Filter (General-Purpose):
+      1. Strict Out-of-Bounds Rejection (ZERO Corner Clamping):
+         Discards any point with x < -1.5, x > L+1.5, y < -1.5, y > W+1.5, or non-finite;
+         also discards legacy border/corner-clamped outliers jumping > 8m to pitch edges.
+      2. 1-2 Frame Teleport Rejection:
+         Rejects false positives jumping > max(2.2m, 38 m/s * dt) or > 10m in 1 frame
+         unless followed by a physically coherent multi-frame trajectory.
+      3. Short-Gap Physics Interpolation (1..8 frames, <= 0.40s, <= 35 m/s):
+         Smoothly bridges brief occlusions/blur without bridging across scene cuts/paused spans.
+      4. Light Zero-Phase Smoothing (5-tap kernel on continuous segments >= 5 frames).
+    """
+    n = len(raw_ball_pitch)
+    if n == 0:
+        return []
+    fps = max(1.0, float(fps))
+    L = float(pitch_length)
+    W = float(pitch_width)
+    inv_m = invalid_mask if (invalid_mask is not None and len(invalid_mask) == n) else [False] * n
+
+    # Step 1: Strict OOB rejection (never clamp wild OOB points onto (0,0) / (105,68)!)
+    obs: List[Tuple[int, np.ndarray]] = []
+    for i, b in enumerate(raw_ball_pitch):
+        if inv_m[i] or b is None:
+            continue
+        pt = np.asarray(b, dtype=np.float32).reshape(-1)
+        if len(pt) < 2 or not np.all(np.isfinite(pt[:2])):
+            continue
+        bx, by = float(pt[0]), float(pt[1])
+        if bx < -1.5 or bx > L + 1.5 or by < -1.5 or by > W + 1.5:
+            continue
+        # Soft-clip genuine near-touchline balls slightly inside pitch lines
+        bx = float(np.clip(bx, 0.1, L - 0.1))
+        by = float(np.clip(by, 0.1, W - 0.1))
+        obs.append((i, np.array([bx, by], dtype=np.float32)))
+
+    if not obs:
+        return [None] * n
+
+    # Drop exact border/corner-clamped artifacts from legacy inputs jumping > 8m to a pitch edge
+    def _is_border_snap(pt: np.ndarray) -> bool:
+        x, y = float(pt[0]), float(pt[1])
+        return x <= 0.25 or x >= L - 0.25 or y <= 0.25 or y >= W - 0.25
+
+    def _is_corner_snap(pt: np.ndarray) -> bool:
+        x, y = float(pt[0]), float(pt[1])
+        return (x <= 0.25 or x >= L - 0.25) and (y <= 0.25 or y >= W - 0.25)
+
+    def _step_ok(i_a: int, p_a: np.ndarray, i_b: int, p_b: np.ndarray, spd_lim: float = max_speed_mps) -> bool:
+        df = abs(i_b - i_a)
+        if df == 0:
+            return True
+        dt = df / fps
+        d = float(np.linalg.norm(p_b - p_a))
+        if df == 1 and d > min(10.0, max(2.2, spd_lim * dt)):
+            return False
+        return d <= max(2.2, spd_lim * dt)
+
+    # Step 2: 1-2 frame teleport & isolated false-positive rejection
+    # First check if initial 1-2 points are isolated outliers before the real track starts
+    start_k = 0
+    while start_k + 2 < len(obs):
+        i0, p0 = obs[start_k]
+        i1, p1 = obs[start_k + 1]
+        i2, p2 = obs[start_k + 2]
+        if _is_corner_snap(p0) and float(np.linalg.norm(p1 - p0)) > 8.0:
+            start_k += 1
+            continue
+        if (not _step_ok(i0, p0, i1, p1)) and _step_ok(i1, p1, i2, p2):
+            start_k += 1
+            continue
+        break
+
+    clean_obs: List[Tuple[int, np.ndarray]] = []
+    if start_k < len(obs):
+        if not (_is_corner_snap(obs[start_k][1]) and len(obs) > start_k + 1 and float(np.linalg.norm(obs[start_k + 1][1] - obs[start_k][1])) > 8.0):
+            clean_obs.append(obs[start_k])
+
+    for k in range(start_k + 1, len(obs)):
+        i_cur, p_cur = obs[k]
+        if not clean_obs:
+            clean_obs.append((i_cur, p_cur))
+            continue
+
+        i_prev, p_prev = clean_obs[-1]
+        d_prev = float(np.linalg.norm(p_cur - p_prev))
+
+        # Reject corner/border snap false positives that jump > 8m onto a boundary
+        if _is_border_snap(p_cur) and d_prev > 8.0:
+            continue
+
+        # Check if there was a scene cut / invalid gap between i_prev and i_cur
+        has_cut = any(inv_m[t] for t in range(i_prev + 1, i_cur))
+        if has_cut:
+            clean_obs.append((i_cur, p_cur))
+            continue
+
+        if _step_ok(i_prev, p_prev, i_cur, p_cur):
+            clean_obs.append((i_cur, p_cur))
+            continue
+
+        # Teleport candidate! Accept ONLY if corroborated by >= 1 coherent next frame
+        # that does NOT snap right back to p_prev (i.e. genuine track re-acquisition after long gap)
+        coherent_next = False
+        if k + 1 < len(obs):
+            i_nxt, p_nxt = obs[k + 1]
+            # Must be close to cur AND further from prev than from cur (not a 1-frame spike!)
+            if _step_ok(i_cur, p_cur, i_nxt, p_nxt) and (i_nxt - i_cur) <= max(3, int(round(0.25 * fps))):
+                # If gap from prev was tiny (<= 3 frames), require 2 consecutive coherent frames so 2-frame spikes are killed
+                if (i_cur - i_prev) <= 3:
+                    if k + 2 < len(obs):
+                        i_n2, p_n2 = obs[k + 2]
+                        if _step_ok(i_nxt, p_nxt, i_n2, p_n2) and float(np.linalg.norm(p_n2 - p_prev)) > 4.0:
+                            coherent_next = True
+                else:
+                    coherent_next = True
+
+        if coherent_next:
+            clean_obs.append((i_cur, p_cur))
+
+    # Step 3: Short-gap physics interpolation (1..max_gap frames, <= 0.40s, <= 35 m/s)
+    max_gap = min(int(max_interp_frames), max(3, int(round(max_interp_sec * fps))))
+    out: List[Optional[np.ndarray]] = [None] * n
+    for idx_c, (fi, pt) in enumerate(clean_obs):
+        out[fi] = pt.copy()
+        if idx_c > 0:
+            prev_fi, prev_pt = clean_obs[idx_c - 1]
+            missing = fi - prev_fi - 1
+            if 1 <= missing <= max_gap:
+                if not any(inv_m[t] for t in range(prev_fi + 1, fi)):
+                    dt = (fi - prev_fi) / fps
+                    dist = float(np.linalg.norm(pt - prev_pt))
+                    if dt > 0.0 and (dist / dt) <= max_interp_speed_mps:
+                        for g in range(1, missing + 1):
+                            r = g / float(fi - prev_fi)
+                            p_mid = prev_pt + (pt - prev_pt) * r
+                            p_mid[0] = float(np.clip(p_mid[0], 0.1, L - 0.1))
+                            p_mid[1] = float(np.clip(p_mid[1], 0.1, W - 0.1))
+                            out[prev_fi + g] = p_mid.astype(np.float32)
+
+    # Step 4: Light zero-phase 5-tap smoothing on continuous ball segments (>= 5 frames)
+    kern = np.array([0.12, 0.22, 0.32, 0.22, 0.12], dtype=np.float32)
+    seg_start: Optional[int] = None
+    segments: List[Tuple[int, int]] = []
+    for i in range(n):
+        if out[i] is not None:
+            if seg_start is None:
+                seg_start = i
+            elif i > seg_start and float(np.linalg.norm(out[i] - out[i - 1])) > 5.5:
+                segments.append((seg_start, i - 1))
+                seg_start = i
+        else:
+            if seg_start is not None:
+                segments.append((seg_start, i - 1))
+                seg_start = None
+    if seg_start is not None:
+        segments.append((seg_start, n - 1))
+
+    for s0, s1 in segments:
+        seg_len = s1 - s0 + 1
+        if seg_len < 5:
+            continue
+        arr = np.stack([out[t] for t in range(s0, s1 + 1)], axis=0)
+        pad_x = np.pad(arr[:, 0], (2, 2), mode="edge")
+        pad_y = np.pad(arr[:, 1], (2, 2), mode="edge")
+        sx = np.convolve(pad_x, kern, mode="valid")
+        sy = np.convolve(pad_y, kern, mode="valid")
+        for off in range(seg_len):
+            out[s0 + off] = np.array(
+                [float(np.clip(sx[off], 0.1, L - 0.1)), float(np.clip(sy[off], 0.1, W - 0.1))],
+                dtype=np.float32,
+            )
+
+    return out
+
+
 def is_progressive_pass(
     start_xy: Any,
     end_xy: Any,
@@ -381,9 +568,10 @@ class TacticalAnalyticsEngine:
                     ent["cls"] = self.cfg.referee_id
                     ent["team"] = -1
 
-        # 2. Detect homography reset/jump exclusion windows (+-0.5s) to prevent fake sprints
+        # 2. Detect ONLY genuine scene cuts, invalid frames, or severe whole-frame teleports
+        # (NEVER wipe sprint streaks on routine PnLCalib/homography keyframe updates!)
         n_total_frames = len(frame_records)
-        exclude_radius = max(1, int(round(0.5 * self.fps)))
+        exclude_radius = max(1, int(round(0.25 * self.fps)))
         homography_excluded = np.zeros(n_total_frames, dtype=bool)
         prev_frame_pts: Dict[int, np.ndarray] = {}
         for f_idx, rec in enumerate(frame_records):
@@ -399,22 +587,30 @@ class TacticalAnalyticsEngine:
                 tid = int(ent["track_id"])
                 cur_frame_pts[tid] = pt
                 prev_pt = prev_frame_pts.get(tid)
-                if prev_pt is not None and float(np.linalg.norm(pt - prev_pt)) > 2.5:
+                if prev_pt is not None and float(np.linalg.norm(pt - prev_pt)) > 4.5:
                     big_jumps += 1
-            if rec.get("homography_reset") or rec.get("H") is None or big_jumps >= 3:
+            is_hard_invalid = (
+                bool(rec.get("is_scene_cut", False))
+                or rec.get("H") is None
+                or (rec.get("homography_valid") is False)
+                or big_jumps >= 4
+            )
+            if is_hard_invalid:
                 lo = max(0, f_idx - exclude_radius)
                 hi = min(n_total_frames, f_idx + exclude_radius + 1)
                 homography_excluded[lo:hi] = True
             prev_frame_pts = cur_frame_pts
 
-        # 3. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & True Sustained Sprints
+        # 3. Compute Smoothed Positions, Windowed + Median-Filtered Speeds, Distances & Calibrated Sprints
         pos_win = max(1, int(self.cfg.position_moving_avg_window))
         vel_win = max(1, int(self.cfg.speed_window_frames))
         med_k = max(1, int(self.cfg.speed_median_filter))
         max_spd_cap = float(self.cfg.max_valid_speed_kmh)
-        max_human_mps = 11.5  # > 11.5 m/s (41.4 km/h) single-frame jump is a homography glitch, NOT a sprint
-        sprint_thresh_kmh = max(25.2, float(self.cfg.sprint_threshold_kmh))  # >= 7.0 m/s (25.2 km/h)
-        min_sprint_frames = max(8, int(round(0.8 * self.fps)))  # >= 0.8s sustained sprint
+        max_human_mps = 11.5  # > 11.5 m/s (41.4 km/h) single-frame jump is a glitch, NOT a sprint
+        # Broadcast High-Speed Sprint standard: >= 6.2 m/s (22.3 km/h) sustained for >= 0.55s
+        sprint_thresh_kmh = 22.32
+        min_sprint_frames = max(5, int(round(0.55 * self.fps)))
+        max_blink_gap_s = max(0.22, 3.2 / self.fps)  # Tolerate 1-2 missing detection frames
         sprint_cooldown_s = 4.0
 
         player_stats: Dict[int, dict] = {}
@@ -429,9 +625,10 @@ class TacticalAnalyticsEngine:
             step_dists = np.zeros(n_obs, dtype=np.float32)
             obs_excluded = np.zeros(n_obs, dtype=bool)
 
-            # Exclude +-0.5s around track start and any track re-entry gaps
+            # Exclude brief warmup at track start and genuine scene cuts / invalid frames
+            start_warmup = max(1, int(round(0.20 * self.fps)))
             for k in range(n_obs):
-                if (f_list[k] - f_list[0]) <= exclude_radius:
+                if (f_list[k] - f_list[0]) < start_warmup:
                     obs_excluded[k] = True
                 if 0 <= f_list[k] < n_total_frames and homography_excluded[f_list[k]]:
                     obs_excluded[k] = True
@@ -439,16 +636,16 @@ class TacticalAnalyticsEngine:
             for k in range(1, n_obs):
                 dt_step = (f_list[k] - f_list[k - 1]) / self.fps
                 if dt_step <= 0 or dt_step > 0.5:
-                    # Track re-entry gap: exclude +-0.5s around re-entry
+                    # Genuine track re-entry gap (> 0.5s): exclude +-0.25s around re-entry
                     for j in range(max(0, k - exclude_radius), min(n_obs, k + exclude_radius + 1)):
                         if abs(f_list[j] - f_list[k]) <= exclude_radius:
                             obs_excluded[j] = True
                     continue
 
                 raw_d_step = float(np.linalg.norm(pts[k] - pts[k - 1]))
-                raw_inst_mps = raw_d_step / dt_step
-                if raw_inst_mps > max_human_mps:
-                    # Physically impossible single-frame homography glitch: reject instead of clamping into a sprint!
+                # Reject genuine single-frame teleport glitches (> 1.35m in 1 frame OR > 16 m/s raw jump)
+                # without letting normal 4-pixel (0.20m) YOLO foot jitter at 25fps wipe real sprints!
+                if raw_d_step > max(1.35, 16.0 * dt_step):
                     for j in range(max(0, k - exclude_radius), min(n_obs, k + exclude_radius + 1)):
                         if abs(f_list[j] - f_list[k]) <= exclude_radius:
                             obs_excluded[j] = True
@@ -456,14 +653,14 @@ class TacticalAnalyticsEngine:
 
                 d_step = float(np.linalg.norm(smooth_pts[k] - smooth_pts[k - 1]))
                 inst_mps = d_step / dt_step
-                if inst_mps > max_human_mps:
+                if inst_mps > 13.5:
                     obs_excluded[k] = True
                     continue
                 if inst_mps * 3.6 > max_spd_cap:
                     d_step = (max_spd_cap / 3.6) * dt_step
                 step_dists[k] = d_step
 
-                # Multi-frame windowed speed suppresses single-frame projection noise
+                # Multi-frame rolling windowed speed suppresses single-frame projection noise
                 k_lo = max(0, k - vel_win)
                 while k_lo < k - 1 and (f_list[k] - f_list[k_lo]) > max(vel_win * 2, int(self.fps * 0.8)):
                     k_lo += 1
@@ -489,14 +686,16 @@ class TacticalAnalyticsEngine:
             last_sprint_t = -1e9
 
             for k in range(1, n_obs):
-                dt_step = (f_list[k] - f_list[k - 1]) / self.fps
-                if dt_step <= 0 or dt_step > 0.5 or obs_excluded[k]:
+                frame_gap = f_list[k] - f_list[k - 1]
+                dt_step = frame_gap / self.fps
+                if dt_step <= 0 or dt_step > max_blink_gap_s or obs_excluded[k]:
                     sprint_streak = 0
                     in_sprint = False
                     continue
                 spd_kmh = float(speeds[k])
                 if spd_kmh >= sprint_thresh_kmh:
-                    sprint_streak += 1
+                    # Tolerate 1-2 frame tracker blinks by crediting bridged frames when continuous
+                    sprint_streak += min(3, max(1, int(frame_gap)))
                     cur_t = f_list[k] / self.fps
                     if (
                         not in_sprint
@@ -573,14 +772,26 @@ class TacticalAnalyticsEngine:
             bpx = rec.get("ball_pitch_xy")
             raw_ball_pitch.append(None if bpx is None else np.asarray(bpx, dtype=np.float32))
 
-        bridged_ball = bridge_ball_pitch_trajectory(
+        invalid_mask = [
+            bool(rec.get("is_scene_cut", False))
+            or (rec.get("homography_valid") is False)
+            or (rec.get("H") is None and rec.get("ball_pitch_xy") is None)
+            for rec in frame_records
+        ]
+        bridged_ball = filter_and_interpolate_ball_pitch(
             raw_ball_pitch,
             self.fps,
-            max_gap_frames=int(getattr(self.cfg, "ball_bridge_max_gap_frames", 8)),
-            max_speed_mps=float(getattr(self.cfg, "ball_bridge_max_speed_mps", 38.0)),
             pitch_length=self.pitch.length,
             pitch_width=self.pitch.width,
+            invalid_mask=invalid_mask,
+            max_speed_mps=float(getattr(self.cfg, "ball_bridge_max_speed_mps", 38.0)),
+            max_interp_speed_mps=35.0,
+            max_interp_sec=0.40,
+            max_interp_frames=int(getattr(self.cfg, "ball_bridge_max_gap_frames", 8)),
         )
+        # Keep frame_records synchronized so tactical_radar.mp4 matches telemetry.json 1:1
+        for rec, bp_clean in zip(frame_records, bridged_ball):
+            rec["ball_pitch_xy"] = bp_clean.copy() if bp_clean is not None else None
         poss_res = extract_possession_and_passes(
             frames_players_pos,
             bridged_ball,

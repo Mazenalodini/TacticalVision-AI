@@ -187,8 +187,13 @@ class BroadcastRenderer:
 
         return canvas
 
-    def draw_radar_frame(self, rec: dict) -> np.ndarray:
+    def draw_radar_frame(self, rec: dict, fps: float = 25.0) -> np.ndarray:
         radar = self.base_pitch_img.copy()
+
+        # When calibration is honestly paused (close-up / replay), render clean empty pitch
+        if rec.get("homography_valid") is False:
+            self.radar_ball_trail.clear()
+            return radar
 
         # 1. Voronoi Pitch Control semi-transparent layer
         vor = rec.get("voronoi_grid")
@@ -242,16 +247,35 @@ class BroadcastRenderer:
                     cv2.putText(radar, lbl, (rx - 7, ry + 4),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
 
-        # 5. Ball Position & Trail
+        # 5. Ball Position & Discontinuity-Safe Comet Trail (drawn LAST — highest z-index!)
+        if rec.get("is_scene_cut") or rec.get("homography_reset"):
+            self.radar_ball_trail.clear()
+
         bp = rec.get("ball_pitch_xy")
-        if bp is not None:
-            r_ball = self._m_to_radar(bp[0], bp[1])
-            self.radar_ball_trail.append(r_ball)
-            pts = list(self.radar_ball_trail)
-            for i in range(1, len(pts)):
-                cv2.line(radar, pts[i - 1], pts[i], self.cfg.ball_color_bgr, 2, cv2.LINE_AA)
-            cv2.circle(radar, r_ball, 6, (255, 255, 255), -1, cv2.LINE_AA)
-            cv2.circle(radar, r_ball, 6, (10, 10, 10), 2, cv2.LINE_AA)
+        f_idx = int(rec.get("frame_idx", 0))
+        eff_fps = max(1.0, float(fps))
+        if bp is not None and len(bp) >= 2 and np.all(np.isfinite(bp[:2])):
+            bx_m, by_m = float(bp[0]), float(bp[1])
+            if -1.5 <= bx_m <= self.pitch.length + 1.5 and -1.5 <= by_m <= self.pitch.width + 1.5:
+                r_ball = self._m_to_radar(bx_m, by_m)
+                self.radar_ball_trail.append((r_ball[0], r_ball[1], bx_m, by_m, f_idx))
+                pts = list(self.radar_ball_trail)
+                # Strict Discontinuous Trail Break Rule: NEVER connect points with dt > 0.25s OR dist > 8.0m
+                for i in range(1, len(pts)):
+                    rx1, ry1, xm1, ym1, f1 = pts[i - 1]
+                    rx2, ry2, xm2, ym2, f2 = pts[i]
+                    dt_seg = (f2 - f1) / eff_fps
+                    dist_m = float(np.hypot(xm2 - xm1, ym2 - ym1))
+                    if 0.0 < dt_seg <= 0.25 and dist_m <= 8.0:
+                        prog = i / float(len(pts))
+                        thick = max(1, int(round(1.5 + prog * 2.2)))
+                        # Warm gold-white fading comet trail (BGR)
+                        col_t = (int(40 + 180 * prog), int(205 + 45 * prog), int(245))
+                        cv2.line(radar, (rx1, ry1), (rx2, ry2), col_t, thick, cv2.LINE_AA)
+                # High-contrast golden outer glow + dark ring + bright white core
+                cv2.circle(radar, r_ball, 9, (21, 204, 250), 2, cv2.LINE_AA)
+                cv2.circle(radar, r_ball, 6, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(radar, r_ball, 6, (42, 23, 15), 2, cv2.LINE_AA)
 
         # Footer label
         vm = rec.get("voronoi_metrics", {})

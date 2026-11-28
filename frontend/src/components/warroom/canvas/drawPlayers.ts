@@ -29,7 +29,8 @@ export function drawPlayers(
   currentFrameIndex: number,
   vp: PitchViewport,
   hoveredPlayerId: number | null = null,
-  overrides?: MatchOverridesMap
+  overrides?: MatchOverridesMap,
+  fps: number = 25
 ) {
   // ── 0. Selected Player Discontinuity-Safe Trajectory Path ──
   if (selectedPlayerId !== null && trajectory && trajectory.length > 1) {
@@ -88,68 +89,11 @@ export function drawPlayers(
     ctx.restore();
   }
 
-  // ── 1. Ball Luminous Comet Trail ──
-  if (ballTrail.length > 1) {
-    ctx.save();
-    const trailLen = ballTrail.length;
-    ctx.lineCap = "round";
-    for (let i = 1; i < trailLen; i++) {
-      const p1 = ballTrail[i - 1];
-      const p2 = ballTrail[i];
-
-      const frameGap = p2.frame - p1.frame;
-      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-
-      if (frameGap >= 0 && frameGap <= 3 && dist <= 7.5) {
-        const [cx1, cy1] = pitchToCanvas(p1.x, p1.y, vp);
-        const [cx2, cy2] = pitchToCanvas(p2.x, p2.y, vp);
-
-        const progress = i / trailLen;
-        const alpha = Math.max(0.08, progress * 0.78);
-        const lineWidth = Math.max(1.4, progress * 3.6);
-
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(52, 211, 153, ${alpha.toFixed(2)})`;
-        ctx.lineWidth = lineWidth;
-        ctx.moveTo(cx1, cy1);
-        ctx.lineTo(cx2, cy2);
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  // ── 2. Ball Marker with Bloom Halo ──
-  if (ball && ball.length === 2 && Number.isFinite(ball[0]) && Number.isFinite(ball[1])) {
-    const [bx, by] = pitchToCanvas(ball[0], ball[1], vp);
-
-    ctx.save();
-    const ballGlow = ctx.createRadialGradient(bx, by, 1, bx, by, 11);
-    ballGlow.addColorStop(0, "rgba(255, 255, 255, 0.55)");
-    ballGlow.addColorStop(0.5, "rgba(52, 211, 153, 0.35)");
-    ballGlow.addColorStop(1, "rgba(52, 211, 153, 0)");
-    ctx.fillStyle = ballGlow;
-    ctx.beginPath();
-    ctx.arc(bx, by, 11, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(bx, by, 4.4, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fill();
-    ctx.strokeStyle = "#060B10";
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // ── 3. Players & Goalkeepers ──
-  if (!players || players.length === 0) return;
-
+  // ── 1. Players & Goalkeepers (drawn BEFORE ball so ball always renders on top!) ──
   const now = performance.now();
   const pulseScale = 1.0 + 0.14 * Math.sin(now * 0.006);
 
-  for (const player of players) {
+  for (const player of players || []) {
     if (
       !Number.isFinite(player.x) ||
       !Number.isFinite(player.y) ||
@@ -286,6 +230,84 @@ export function drawPlayers(
       ctx.fillText(label, cx, cy + 0.5);
     }
 
+    ctx.restore();
+  }
+
+  // ── 2. Ball Discontinuity-Safe Golden/White Comet Trail (drawn LAST — highest z-index!) ──
+  const safeFps = Math.max(1, fps || 25);
+  if (ballTrail.length > 1) {
+    ctx.save();
+    const trailLen = ballTrail.length;
+    ctx.lineCap = "round";
+    for (let i = 1; i < trailLen; i++) {
+      const p1 = ballTrail[i - 1];
+      const p2 = ballTrail[i];
+
+      const dtSec = (p2.frame - p1.frame) / safeFps;
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+      // Strict Discontinuous Trail Break Rule: NEVER connect points with dt > 0.25s OR dist > 8.0m
+      if (dtSec >= 0 && dtSec <= 0.25 && dist <= 8.0) {
+        const [cx1, cy1] = pitchToCanvas(p1.x, p1.y, vp);
+        const [cx2, cy2] = pitchToCanvas(p2.x, p2.y, vp);
+
+        const progress = i / trailLen;
+        const alpha = Math.max(0.10, progress * 0.88);
+        const lineWidth = Math.max(1.5, progress * 3.8);
+        // Warm gold -> bright white fading gradient
+        const g = Math.round(204 + progress * 51);
+        const b = Math.round(21 + progress * 224);
+
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(255, ${g}, ${b}, ${alpha.toFixed(2)})`;
+        ctx.lineWidth = lineWidth;
+        ctx.moveTo(cx1, cy1);
+        ctx.lineTo(cx2, cy2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── 3. High-Contrast Ball Marker (bright white core + dark #0F172A ring + amber #FACC15 outer glow) ──
+  if (
+    ball &&
+    ball.length === 2 &&
+    Number.isFinite(ball[0]) &&
+    Number.isFinite(ball[1]) &&
+    ball[0] >= -1.5 &&
+    ball[0] <= FIFA_PITCH.length + 1.5 &&
+    ball[1] >= -1.5 &&
+    ball[1] <= FIFA_PITCH.width + 1.5
+  ) {
+    const [bx, by] = pitchToCanvas(ball[0], ball[1], vp);
+
+    ctx.save();
+    // Subtle golden/amber outer glow (#FACC15) so the eye locks onto the ball instantly
+    const ballGlow = ctx.createRadialGradient(bx, by, 3.5, bx, by, 14);
+    ballGlow.addColorStop(0, "rgba(250, 204, 21, 0.72)");
+    ballGlow.addColorStop(0.55, "rgba(250, 204, 21, 0.28)");
+    ballGlow.addColorStop(1, "rgba(250, 204, 21, 0)");
+    ctx.fillStyle = ballGlow;
+    ctx.beginPath();
+    ctx.arc(bx, by, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crisp outer golden halo stroke
+    ctx.beginPath();
+    ctx.arc(bx, by, 7.2, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(250, 204, 21, 0.90)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // Bright white core (r = 5.5px) + dark contrast ring (#0F172A, 1.8px)
+    ctx.beginPath();
+    ctx.arc(bx, by, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fill();
+    ctx.strokeStyle = "#0F172A";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
     ctx.restore();
   }
 }

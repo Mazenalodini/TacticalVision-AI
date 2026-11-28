@@ -20,9 +20,9 @@ from .team_classifier import (
     stabilize_team_assignments,
 )
 from .jersey_recognizer import JerseyRecognizer
-from .homography import StabilizedHomography
+from .homography import StabilizedHomography, smooth_shot_homographies
 from .pnlcalib_calibrator import PnLCalib3DCalibrator, check_pnlcalib_readiness
-from .tactics import TacticalAnalyticsEngine
+from .tactics import TacticalAnalyticsEngine, filter_and_interpolate_ball_pitch
 from .renderer import BroadcastRenderer, transcode_to_h264
 from .video_feature_extractor import SoccerNetVideoFeatureExtractor
 from .action_spotter import ActionSpotter
@@ -285,6 +285,7 @@ class MatchAnalysisPipeline:
                 "H": homography.H.copy() if homography.H is not None else None,
                 "H_inv": homography.H_inv.copy() if homography.H_inv is not None else None,
                 "ball_detected": ball_det_ok,
+                "is_scene_cut": bool(is_scene_cut),
                 "homography_reset": bool(is_scene_cut or homography.last_was_reset),
                 "homography_valid": bool(homography.homography_valid),
             })
@@ -321,6 +322,22 @@ class MatchAnalysisPipeline:
                     m[0] = np.clip(m[0], -2.0, self.pitch.length + 2.0)
                     m[1] = np.clip(m[1], -2.0, self.pitch.width + 2.0)
                     ent["pitch_xy"] = m
+
+        # ======================================================================
+        # PASS 1.5: Zero-Phase Shot-Level Homography Smoothing & Outlier Rejection
+        # ======================================================================
+        smooth_stats = smooth_shot_homographies(
+            frame_records,
+            self.pitch,
+            img_w=width,
+            img_h=height,
+            fps=fps,
+        )
+        calibrator_summary.update(smooth_stats)
+        print(
+            f"[Pass 1.5] Shot-Level Homography Smoothing: shots={smooth_stats['shots_smoothed']} | "
+            f"outliers_replaced={smooth_stats['outliers_replaced']} | frames={smooth_stats['frames_smoothed']}"
+        )
 
         # ======================================================================
         # STAGE 1b: Model 3 Raw-Video Broadcast Action Spotting
@@ -460,19 +477,53 @@ class MatchAnalysisPipeline:
 
         smooth_ball_xy = interpolate_ball_track(raw_ball_xy, max_gap=12)
         ball_tracked_frames = 0
+        raw_ball_pitch_list = []
+        invalid_ball_mask = []
         for rec, bxy in zip(frame_records, smooth_ball_xy):
             rec["ball_xy"] = bxy
+            hv_rec = bool(rec.get("homography_valid", rec.get("H") is not None))
+            invalid_ball_mask.append(bool(rec.get("is_scene_cut", False)) or not hv_rec)
             if bxy is not None:
                 ball_tracked_frames += 1
-                if rec["H"] is not None:
-                    bp = cv2.perspectiveTransform(bxy.reshape(1, 1, 2).astype(np.float32), rec["H"]).reshape(2)
-                    bp[0] = np.clip(bp[0], 0.0, self.pitch.length)
-                    bp[1] = np.clip(bp[1], 0.0, self.pitch.width)
-                    rec["ball_pitch_xy"] = bp
+                H_rec = rec.get("H")
+                if hv_rec and H_rec is not None:
+                    H_f64 = np.asarray(H_rec, dtype=np.float64)
+                    w_val = float(H_f64[2, 0] * float(bxy[0]) + H_f64[2, 1] * float(bxy[1]) + H_f64[2, 2])
+                    if abs(w_val) > 0.05:
+                        bp = cv2.perspectiveTransform(
+                            bxy.reshape(1, 1, 2).astype(np.float32), H_f64
+                        ).reshape(2)
+                        # Strict OOB discard — NEVER clamp out-of-bounds outliers onto (0,0)/(105,68)!
+                        if (
+                            np.all(np.isfinite(bp))
+                            and -1.5 <= float(bp[0]) <= self.pitch.length + 1.5
+                            and -1.5 <= float(bp[1]) <= self.pitch.width + 1.5
+                        ):
+                            bp[0] = np.clip(bp[0], 0.1, self.pitch.length - 0.1)
+                            bp[1] = np.clip(bp[1], 0.1, self.pitch.width - 0.1)
+                            raw_ball_pitch_list.append(bp.astype(np.float32))
+                        else:
+                            raw_ball_pitch_list.append(None)
+                    else:
+                        raw_ball_pitch_list.append(None)
                 else:
-                    rec["ball_pitch_xy"] = None
+                    raw_ball_pitch_list.append(None)
             else:
-                rec["ball_pitch_xy"] = None
+                raw_ball_pitch_list.append(None)
+
+        clean_ball_pitch = filter_and_interpolate_ball_pitch(
+            raw_ball_pitch_list,
+            fps=fps,
+            pitch_length=self.pitch.length,
+            pitch_width=self.pitch.width,
+            invalid_mask=invalid_ball_mask,
+            max_speed_mps=float(getattr(self.cfg, "ball_bridge_max_speed_mps", 38.0)),
+            max_interp_speed_mps=35.0,
+            max_interp_sec=0.40,
+            max_interp_frames=int(getattr(self.cfg, "ball_bridge_max_gap_frames", 8)),
+        )
+        for rec, bp_clean in zip(frame_records, clean_ball_pitch):
+            rec["ball_pitch_xy"] = bp_clean
 
         # ======================================================================
         # STAGE 3: Physical & Tactical Telemetry Extraction
@@ -526,7 +577,7 @@ class MatchAnalysisPipeline:
             if not ok:
                 break
             b_frame = renderer.draw_broadcast_frame(frame, rec, fps=fps)
-            r_frame = renderer.draw_radar_frame(rec)
+            r_frame = renderer.draw_radar_frame(rec, fps=fps)
             w_bcast.write(b_frame)
             w_radar.write(r_frame)
 
