@@ -7,7 +7,7 @@ All 8 top-level keys of telemetry.json are covered:
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,10 @@ class PlayerStat(BaseModel):
     xt_generated: float
     avg_pitch_xy: list[float]        # [x, y] meters
     frames_visible: int
+    jersey_number: Optional[int] = None
+    jersey_confidence: Optional[float] = None
+    jersey_verified: bool = False
+    legibility_score: Optional[float] = None
 
 
 # ── passing_network ─────────────────────────────────────────────────
@@ -87,6 +91,7 @@ class PassEvent(BaseModel):
     end_xy: list[float]
     distance_m: float
     xt_delta: float
+    is_progressive: bool = False
 
 
 class SprintEvent(BaseModel):
@@ -130,11 +135,14 @@ class FramePlayer(BaseModel):
     x: float
     y: float
     spd: float
+    jn: Optional[int] = None
+    jv: Optional[bool] = None
 
 
 class TimelineFrame(BaseModel):
     f: int
     t: float
+    hv: Optional[bool] = True            # Honest homography calibration validity flag
     players: list[FramePlayer]
     ball: Optional[list[float]] = None   # [x, y] or null
     vor: list[float]                     # [team_0_pct, team_1_pct]
@@ -149,6 +157,8 @@ class MatchInfo(BaseModel):
     fps: float
     pitch_dimensions_m: list[float]
     team_colors: dict[str, str]      # {"0": "#1EC8FF", "1": "#FF5555"}
+    team_a_kit_hex: Optional[str] = None
+    team_b_kit_hex: Optional[str] = None
 
 
 # ── engine_diagnostics ──────────────────────────────────────────────
@@ -158,16 +168,34 @@ class HomographySummary(BaseModel):
     rejected_frames: int
     stability_rate_pct: float
     mean_inlier_reproj_error_m: Optional[float] = None
+    flow_propagated_frames: Optional[int] = None
+    calibrator_backend: Optional[str] = None
+
+
+class ActionSpottingEvent(BaseModel):
+    class_id: int
+    label: str
+    category: str
+    half: int
+    frame_idx: int
+    time_s: float
+    minute_str: str
+    confidence: float
 
 
 class EngineDiagnostics(BaseModel):
     homography: HomographySummary
+    calibrator_backend: Optional[str] = None
+    team_classifier: Optional[dict[str, Any]] = None
     ball_coverage_pct: float
     processing_time_s: float
+    jersey_recognition: Optional[dict[str, Any]] = None
+    broadcast_spotting_ms: Optional[float] = None
+    broadcast_spotting_backend: Optional[str] = None
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Complete Telemetry — all 8 top-level keys
+# Complete Telemetry — all 8 core keys + optional Model 3 broadcast_events
 # ══════════════════════════════════════════════════════════════════════
 
 class Telemetry(BaseModel):
@@ -179,6 +207,7 @@ class Telemetry(BaseModel):
     frames: list[TimelineFrame]
     match_info: MatchInfo
     engine_diagnostics: EngineDiagnostics
+    broadcast_events: list[ActionSpottingEvent] = Field(default_factory=list)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -218,3 +247,56 @@ class JobStatus(BaseModel):
     error: Optional[str] = None
     match_id: Optional[str] = None
     pid: Optional[int] = None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 4-Model AI Suite & Action Spotting Schemas
+# ══════════════════════════════════════════════════════════════════════
+
+
+class ActionSpottingDensityBin(BaseModel):
+    bin_index: int
+    label: str
+    start_s: float
+    end_s: float
+    count: int
+    high_impact_count: int
+
+
+class ActionSpottingHalfSummary(BaseModel):
+    half: int
+    num_frames: int
+    fps: float
+    duration_s: float
+    inference_ms: float
+    backend_used: str
+    events_count: int
+
+
+class ActionSpottingGTComparison(BaseModel):
+    tolerance_sec: float = 10.0
+    gt_total: int
+    matched_gt: int
+    predicted_total: int
+    precision_pct: float
+    recall_pct: float
+
+
+class ActionSpottingAnalyzeResponse(BaseModel):
+    run_id: str
+    match_id: str
+    match_title: str
+    half_mode: str
+    fps: float
+    min_conf: float
+    nms_window_sec: float
+    total_inference_ms: float
+    backend_used: str
+    halves: list[ActionSpottingHalfSummary]
+    events: list[ActionSpottingEvent]
+    class_counts: dict[str, int]
+    category_counts: dict[str, int]
+    density_bins: list[ActionSpottingDensityBin]
+    ground_truth_events: Optional[list[dict[str, Any]]] = None
+    gt_comparison: Optional[ActionSpottingGTComparison] = None
+    created_at: str

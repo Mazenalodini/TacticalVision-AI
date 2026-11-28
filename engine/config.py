@@ -1,5 +1,8 @@
+import json
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 
@@ -95,6 +98,23 @@ XT_GRID = np.array([
 ], dtype=np.float32)
 
 
+def load_production_tuning(project_root: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Load verified production calibration settings from artifacts/models_meta/models_registry.json
+    and optimal_thresholds_v1.json, with safe deterministic defaults if metadata files are absent.
+    """
+    root = project_root or Path(__file__).resolve().parent.parent
+    registry_path = root / "artifacts" / "models_meta" / "models_registry.json"
+    tuning: Dict[str, Any] = {}
+    if registry_path.exists():
+        try:
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            tuning = data.get("production_tuning", {})
+        except Exception:
+            tuning = {}
+    return tuning
+
+
 @dataclass
 class EngineConfig:
     players_model_path: str
@@ -107,21 +127,47 @@ class EngineConfig:
     goalkeeper_id: int = 1
     player_id: int = 2
     referee_id: int = 3
-    # Video-optimized thresholds (ball threshold lowered slightly to boost video recall + Kalman gate)
+    # Video-optimized thresholds
     ball_conf: float = 0.22
     goalkeeper_conf: float = 0.48
     player_conf: float = 0.50
     referee_conf: float = 0.45
-    pitch_kpt_conf: float = 0.62
+    # Calibrated Model 2 homography parameters (aligned with models_registry.json production_tuning)
+    pitch_kpt_conf: float = 0.30
+    pitch_stride: int = 2
+    min_span_m: float = 15.0
+    min_convex_hull_area_m2: float = 150.0
     nms_iou: float = 0.50
-    # Analytics & Physics thresholds
-    max_player_speed_kmh: float = 37.5
+    homography_ema_alpha: float = 0.20
+    max_homography_reproj_m: float = 2.5
+    # Analytics & Kinematics calibration
+    position_moving_avg_window: int = 7
+    speed_window_frames: int = 10
+    speed_median_filter: int = 5
+    max_valid_speed_kmh: float = 35.5
+    max_player_speed_kmh: float = 35.5
     sprint_threshold_kmh: float = 24.0
-    possession_radius_m: float = 2.8
-    min_pass_distance_m: float = 4.0
-    min_owner_frames: int = 3
-    homography_ema_alpha: float = 0.25
-    max_homography_reproj_m: float = 2.6
+    possession_radius_m: float = 3.4
+    min_pass_distance_m: float = 3.0
+    min_owner_frames: int = 2
+    min_turnover_frames: int = 5
+    ball_bridge_max_gap_frames: int = 8
+    ball_bridge_max_speed_mps: float = 38.0
+    # Team Classifier & Model 3: Raw-Video Temporal Action Spotting
+    enable_siglip: bool = True
+    enable_action_spotting: bool = True
+    resnet_onnx_path: str = ""
+    pca_weights_path: str = ""
+    action_spotting_min_conf: float = 0.15
+    # Model 4: Jersey Legibility Gate + Offline OCR
+    enable_jersey_ocr: bool = True
+    jersey_legibility_onnx_path: str = ""
+    jersey_legibility_pt_path: str = ""
+    jersey_legibility_threshold: float = 0.45
+    jersey_min_track_ocr_conf: float = 0.18
+    jersey_parseq_min_crop_conf: float = 0.35
+    jersey_max_crops_per_track: int = 12
+    jersey_torso_crop_box: Tuple[float, float, float, float] = (0.20, 0.18, 0.80, 0.56)
     # Visual theme (BGR for OpenCV)
     team_colors_bgr: Dict[int, Tuple[int, int, int]] = field(default_factory=lambda: {
         0: (255, 200, 30),   # Team A: Electric Cyan/Sky Blue
@@ -131,5 +177,77 @@ class EngineConfig:
         0: "#1EC8FF",
         1: "#FF5555",
     })
-    referee_color_bgr: Tuple[int, int, int] = (40, 215, 255)  # Amber/Gold
+    referee_color_bgr: Tuple[int, int, int] = (21, 204, 250)  # Yellow #FACC15 in BGR
     ball_color_bgr: Tuple[int, int, int] = (60, 255, 130)     # Neon Mint
+
+    def __post_init__(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        tuning = load_production_tuning(root)
+        m2 = tuning.get("model_2_pitch_homography", {})
+        kin = tuning.get("kinematics_smoothing", {})
+        m4 = tuning.get("model_4_jersey_recognition", {})
+
+        # Apply verified registry calibration while preserving explicit overrides
+        if self.pitch_kpt_conf == 0.30 and "kpt_conf" in m2:
+            self.pitch_kpt_conf = float(m2["kpt_conf"])
+        if self.pitch_stride == 2 and "pitch_stride" in m2:
+            self.pitch_stride = int(m2["pitch_stride"])
+        if self.min_span_m == 15.0 and "min_span_m" in m2:
+            self.min_span_m = float(m2["min_span_m"])
+        if self.min_convex_hull_area_m2 == 150.0 and "min_convex_hull_area_m2" in m2:
+            self.min_convex_hull_area_m2 = float(m2["min_convex_hull_area_m2"])
+        if self.max_homography_reproj_m == 2.5 and "max_reproj_error_m" in m2:
+            self.max_homography_reproj_m = float(m2["max_reproj_error_m"])
+        if self.homography_ema_alpha == 0.20 and "ema_alpha" in m2:
+            self.homography_ema_alpha = float(m2["ema_alpha"])
+
+        if self.position_moving_avg_window == 7 and "position_moving_avg_window" in kin:
+            self.position_moving_avg_window = int(kin["position_moving_avg_window"])
+        if self.speed_window_frames == 10 and "speed_window_frames" in kin:
+            self.speed_window_frames = int(kin["speed_window_frames"])
+        if self.speed_median_filter == 5 and "speed_median_filter" in kin:
+            self.speed_median_filter = int(kin["speed_median_filter"])
+        if self.max_valid_speed_kmh == 35.5 and "max_valid_speed_kmh" in kin:
+            self.max_valid_speed_kmh = float(kin["max_valid_speed_kmh"])
+        self.max_player_speed_kmh = float(self.max_valid_speed_kmh)
+
+        if self.jersey_legibility_threshold == 0.45 and "legibility_threshold" in m4:
+            self.jersey_legibility_threshold = float(m4["legibility_threshold"])
+        if self.jersey_min_track_ocr_conf == 0.18 and "min_track_ocr_conf" in m4:
+            self.jersey_min_track_ocr_conf = float(m4["min_track_ocr_conf"])
+        if self.jersey_parseq_min_crop_conf == 0.35 and "parseq_min_crop_conf" in m4:
+            self.jersey_parseq_min_crop_conf = float(m4["parseq_min_crop_conf"])
+        if self.jersey_max_crops_per_track == 12 and "max_crops_per_track" in m4:
+            self.jersey_max_crops_per_track = int(m4["max_crops_per_track"])
+        if "torso_crop_box" in m4 and len(m4["torso_crop_box"]) == 4:
+            self.jersey_torso_crop_box = tuple(float(v) for v in m4["torso_crop_box"])  # type: ignore
+
+        env_models = Path(os.environ["MODELS_DIR"]) if os.environ.get("MODELS_DIR", "").strip() else None
+        models_dir = (
+            Path(self.players_model_path).resolve().parent
+            if self.players_model_path
+            else (env_models or (root / "models"))
+        )
+        if not models_dir.exists():
+            models_dir = env_models if (env_models and env_models.exists()) else (root / "models")
+        if not self.jersey_legibility_onnx_path:
+            pref = str(m4.get("preferred_legibility_file", "jersey_legibility_v1_int8.onnx"))
+            cand = models_dir / pref
+            if not cand.exists():
+                cand = models_dir / "jersey_legibility_v1.onnx"
+            self.jersey_legibility_onnx_path = str(cand)
+        if not self.jersey_legibility_pt_path:
+            self.jersey_legibility_pt_path = str(models_dir / "jersey_legibility_v1.pt")
+
+        if not self.thresholds_path:
+            v1_thresh = root / "artifacts" / "models_meta" / "optimal_thresholds_v1.json"
+            legacy_thresh = root / "reports" / "optimal_thresholds.json"
+            if v1_thresh.exists():
+                self.thresholds_path = str(v1_thresh)
+            elif legacy_thresh.exists():
+                self.thresholds_path = str(legacy_thresh)
+
+        if not self.resnet_onnx_path:
+            self.resnet_onnx_path = str(models_dir / "resnet152_tf2_backbone.onnx")
+        if not self.pca_weights_path:
+            self.pca_weights_path = str(models_dir / "soccernet_pca512_tf2_weights.npz")

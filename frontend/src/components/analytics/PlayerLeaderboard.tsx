@@ -10,9 +10,11 @@ import {
   FileJson,
   Printer,
   Crosshair,
+  BadgeCheck,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { BidiNum } from "@/components/ui/BidiNum";
+import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
 import { getExportUrl } from "@/lib/api";
 import { formatPlayerCount, formatRole } from "@/lib/format";
 import type { Telemetry } from "@/lib/types";
@@ -41,6 +43,7 @@ export function PlayerLeaderboard({
   onSelectPlayer,
 }: PlayerLeaderboardProps) {
   const { t, lang } = useLang();
+  const { overrides } = usePlayerOverrides(matchId);
 
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [teamFilter, setTeamFilter] = useState<"all" | "0" | "1">("all");
@@ -69,11 +72,15 @@ export function PlayerLeaderboard({
 
     if (searchQuery.trim()) {
       const q = searchQuery.trim().replace(/^#/, "").toLowerCase();
-      list = list.filter(
-        (p) =>
+      list = list.filter((p) => {
+        const id = resolvePlayerIdentity(p.track_id, p, overrides);
+        return (
           p.track_id.toString().includes(q) ||
+          (id.jerseyNumber != null && id.jerseyNumber.toString().includes(q)) ||
+          (id.customName && id.customName.toLowerCase().includes(q)) ||
           p.role.toLowerCase().includes(q)
-      );
+        );
+      });
     }
 
     list.sort((a, b) => {
@@ -92,7 +99,7 @@ export function PlayerLeaderboard({
     });
 
     return list;
-  }, [telemetry, teamFilter, roleFilter, searchQuery, sortField, sortDirection]);
+  }, [telemetry, teamFilter, roleFilter, searchQuery, sortField, sortDirection, overrides]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -459,16 +466,65 @@ export function PlayerLeaderboard({
                     key={`player-row-${p.track_id}`}
                     className="hover:bg-white/[0.03] transition-colors group print:hover:bg-transparent"
                   >
-                    {/* ID */}
+                    {/* ID: Honest `#jn ✓` (verified/override) vs muted `T{id}` fallback */}
                     <td className="py-2.5 px-3 font-bold text-white print:text-black text-start">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            isCyan ? "bg-tv-cyan" : "bg-tv-coral"
-                          }`}
-                        />
-                        <BidiNum>{`#${p.track_id}`}</BidiNum>
-                      </span>
+                      {(() => {
+                        const identity = resolvePlayerIdentity(p.track_id, p, overrides);
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            title={
+                              identity.isVerified
+                                ? `${
+                                    identity.isCoachOverride
+                                      ? t("jersey.coach_override")
+                                      : t("jersey.verified")
+                                  } · ${t("jersey.track_fallback")} #${p.track_id}${
+                                    p.jersey_confidence != null
+                                      ? ` · ${Math.round(p.jersey_confidence * 100)}%`
+                                      : ""
+                                  }`
+                                : t("jersey.unverified_tip")
+                            }
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                isCyan ? "bg-tv-cyan" : "bg-tv-coral"
+                              }`}
+                            />
+                            {identity.isVerified ? (
+                              <span className="inline-flex items-center gap-1 flex-wrap">
+                                <BidiNum className="text-white font-extrabold">
+                                  {identity.badgeText}
+                                </BidiNum>
+                                <BadgeCheck
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    identity.isCoachOverride ? "text-tv-amber" : "text-tv-mint"
+                                  }`}
+                                />
+                                {identity.customName && (
+                                  <span className="text-[11px] font-semibold text-slate-200">
+                                    {identity.customName}
+                                  </span>
+                                )}
+                                <BidiNum className="text-[10px] text-slate-500 font-normal">
+                                  {`#${p.track_id}`}
+                                </BidiNum>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-slate-400 font-semibold">
+                                <span>{t("jersey.track_short")}</span>{" "}
+                                <BidiNum>{`#${p.track_id}`}</BidiNum>
+                                {identity.customName && (
+                                  <span className="text-[11px] text-slate-200 font-semibold">
+                                    {identity.customName}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Team */}

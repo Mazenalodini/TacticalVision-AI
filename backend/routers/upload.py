@@ -10,11 +10,13 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
+from pydantic import BaseModel
 
 from ..config import settings
 from ..models.schemas import JobStatus
 from ..services.job_runner import job_runner
 from ..services.match_service import match_service
+from ..services.remote_gpu_client import ping_remote_gpu, validate_remote_gpu_url
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -23,13 +25,30 @@ MAX_FILE_SIZE_BYTES = 250 * 1024 * 1024  # 250 MB
 CORE_MATCH_IDS = {"match_01_counter", "match_02_buildup", "match_03_pressing", "match_03_press"}
 
 
+class GpuPingRequest(BaseModel):
+    url: str = ""
+
+
+@router.post("/gpu/ping")
+async def gpu_ping(body: GpuPingRequest):
+    """Proxy health check to a Remote GPU Worker URL (eliminates browser CORS issues)."""
+    target_url = (body.url or settings.get_default_remote_gpu_url()).strip()
+    try:
+        validate_remote_gpu_url(target_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return await ping_remote_gpu(target_url)
+
+
 @router.post("/matches/analyze", status_code=status.HTTP_202_ACCEPTED)
 async def analyze_match(
     file: UploadFile = File(...),
     title: str = Form("User Uploaded Match"),
     mode: str = Form("cpu_quick"),
-    max_seconds: float = Form(3.0),
+    max_seconds: float = Form(0.0),
+    start_seconds: float = Form(0.0),
     remote_gpu_url: Optional[str] = Form(None),
+    enable_jersey_ocr: bool = Form(True),
 ):
     """Upload and schedule a video for tactical AI analysis."""
     # 1. Validate file extension
@@ -41,44 +60,23 @@ async def analyze_match(
             detail=f"Invalid file extension '{ext}'. Allowed formats: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # 2. Remote GPU mode validation
+    # 2. Validate Remote GPU URL upfront if mode == remote_gpu
+    resolved_remote_url: Optional[str] = None
     if mode == "remote_gpu":
-        target_url = (remote_gpu_url or settings.remote_gpu_worker_url).strip()
-        if not target_url or not (target_url.startswith("http://") or target_url.startswith("https://")):
+        raw_url = (remote_gpu_url or settings.get_default_remote_gpu_url()).strip()
+        try:
+            resolved_remote_url = validate_remote_gpu_url(raw_url)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Remote GPU worker URL is not configured or invalid. Please provide a valid http(s) URL.",
+                detail=str(exc),
             )
 
-        # Forward upload to remote GPU worker
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                content = await file.read()
-                files = {"file": (filename, content, file.content_type)}
-                data = {
-                    "title": title,
-                    "mode": "remote_gpu",
-                    "max_seconds": str(max_seconds),
-                }
-                res = await client.post(f"{target_url.rstrip('/')}/api/matches/analyze", files=files, data=data)
-                if res.status_code not in (200, 202):
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail=f"Remote worker rejected job: {res.text}",
-                    )
-                return res.json()
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Failed to connect to remote GPU worker: {e}",
-            )
-
-    # 3. Local CPU Quick-Scan Mode
+    # 3. Save uploaded file in chunks with 250 MB size guard
     job_uuid = uuid.uuid4().hex[:8]
     safe_name = f"{job_uuid}_{Path(filename).stem}{ext}"
     dest_path = settings.tmp_uploads_dir / safe_name
 
-    # Save uploaded file in chunks with size guard
     total_bytes = 0
     try:
         with open(dest_path, "wb") as f:
@@ -97,12 +95,25 @@ async def analyze_match(
             raise e
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded video: {e}")
 
-    # Launch worker via job_runner
+    # 4. Dispatch either Remote GPU proxy job or Local CPU worker subprocess
+    if mode == "remote_gpu" and resolved_remote_url:
+        job_id = job_runner.start_remote_gpu_job(
+            video_path=dest_path,
+            title=title,
+            remote_gpu_url=resolved_remote_url,
+            max_seconds=max_seconds,
+            start_seconds=start_seconds,
+            enable_jersey_ocr=enable_jersey_ocr,
+        )
+        return {"job_id": job_id, "status": "queued"}
+
     job_id = job_runner.start_job(
         video_path=dest_path,
         title=title,
         mode=mode,
         max_seconds=max_seconds,
+        start_seconds=start_seconds,
+        enable_jersey_ocr=enable_jersey_ocr,
     )
 
     return {"job_id": job_id, "status": "queued"}

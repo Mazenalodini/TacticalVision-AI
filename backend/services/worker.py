@@ -18,6 +18,8 @@ import re
 import shutil
 import sys
 import time
+import traceback
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -99,14 +101,29 @@ def update_job_status(
         "video_path": video_path,
     }
 
-    temp_path = jobs_dir / f"{job_id}.json.tmp"
+    temp_path = jobs_dir / f"{job_id}.json.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
 
     try:
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        temp_path.replace(target_path)
+            f.flush()
+        for attempt in range(10):
+            try:
+                os.replace(temp_path, target_path)
+                return
+            except (PermissionError, OSError):
+                if attempt + 1 < 10:
+                    time.sleep(min(0.08, 0.02 * (1.35 ** attempt)))
+                else:
+                    raise
     except Exception as e:
         sys.stderr.write(f"Failed to update job status: {e}\n")
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 class ProgressParserStream:
@@ -149,33 +166,42 @@ class ProgressParserStream:
         if not text:
             return
 
+        # Init milestone
+        if "[Init]" in text:
+            self.on_progress("detecting", 12.0, "Loading YOLOv11 & ONNX Neural Weights...")
+            return
+
+        # Stage 1b: Model 3 Raw Video Action Spotting
+        if "[Stage 1b]" in text:
+            self.on_progress("classifying", 56.0, "Running Model 3 Broadcast Action Spotting...")
+            return
+
         # Stage 2 marker
         if "[Stage 2]" in text:
-            self.on_progress("classifying", 55.0, "Fitting SigLIP & Stabilizing Team IDs...")
+            self.on_progress("classifying", 62.0, "Clustering Teams & Recognizing Jersey Numbers...")
             return
 
         # Stage 3 marker
         if "[Stage 3]" in text:
-            self.on_progress("computing", 68.0, "Extracting Tactical & Kinematic Telemetry...")
+            self.on_progress("computing", 70.0, "Extracting Tactical & Kinematic Telemetry...")
             return
 
         # Pass 2 marker
         if "Pass 2/2" in text:
             self.current_pass = 2
-            # Try parsing percentage from tqdm e.g. " 45%|"
             pct_match = re.search(r"(\d+)%\|", text)
             if pct_match:
                 pct = float(pct_match.group(1))
-                # Map 0..100% of pass 2 to 78%..90%
-                overall = 78.0 + (pct / 100.0) * 12.0
+                # Map 0..100% of pass 2 to 76%..90%
+                overall = 76.0 + (pct / 100.0) * 14.0
                 self.on_progress("encoding", overall, f"Rendering Broadcast Overlays & Radar ({int(pct)}%)...")
             else:
-                self.on_progress("encoding", 78.0, "Rendering Broadcast Overlays & Radar...")
+                self.on_progress("encoding", 76.0, "Rendering Broadcast Overlays & Radar...")
             return
 
         # Encoding marker
         if "[Encoding]" in text:
-            self.on_progress("encoding", 92.0, "Transcoding Web H.264 Video...")
+            self.on_progress("encoding", 93.0, "Transcoding Web H.264 Video...")
             return
 
         # Pass 1 tqdm detection
@@ -183,8 +209,8 @@ class ProgressParserStream:
             pct_match = re.search(r"(\d+)%\|", text)
             if pct_match:
                 pct = float(pct_match.group(1))
-                # Map 0..100% of pass 1 to 5%..50%
-                overall = 5.0 + (pct / 100.0) * 45.0
+                # Map 0..100% of pass 1 to 15%..52%
+                overall = 15.0 + (pct / 100.0) * 37.0
                 self.on_progress("detecting", overall, f"Dual-YOLOv11 Detection & Tracking ({int(pct)}%)...")
 
 
@@ -194,8 +220,24 @@ def main() -> int:
     parser.add_argument("--video", required=True, help="Path to input video file")
     parser.add_argument("--output-dir", required=True, help="Target match directory in outputs/")
     parser.add_argument("--title", default="User Uploaded Match", help="Match display title")
-    parser.add_argument("--max-seconds", type=float, default=5.0, help="Maximum clip duration to analyze")
+    parser.add_argument("--max-seconds", type=float, default=0.0, help="Maximum clip duration to analyze (0 = full video)")
+    parser.add_argument("--start-seconds", type=float, default=0.0, help="Optional clip start timestamp in seconds")
     parser.add_argument("--mode", default="cpu_quick", help="Analysis mode (cpu_quick | remote_gpu)")
+    parser.add_argument("--models-dir", default="", help="Optional override directory for model weights (e.g. Kaggle /kaggle/input/...)")
+    parser.add_argument("--fast-scan", action="store_true", default=False, help="Use 640px player detector even on GPU for rapid scanning")
+    parser.add_argument(
+        "--enable-jersey-ocr",
+        dest="enable_jersey_ocr",
+        action="store_true",
+        default=True,
+        help="Run Model 4 Jersey Legibility Gate + PARSeq OCR",
+    )
+    parser.add_argument(
+        "--no-jersey-ocr",
+        dest="enable_jersey_ocr",
+        action="store_false",
+        help="Disable Model 4 Jersey Recognition",
+    )
 
     args = parser.parse_args()
 
@@ -247,14 +289,20 @@ def main() -> int:
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+        progress_callback("detecting", 8.0, "Importing CV & ONNX Runtime Engine...")
         import torch
         from engine.config import EngineConfig
         from engine.pipeline import MatchAnalysisPipeline
 
-        models_dir = project_root / "models"
+        env_models_dir = (args.models_dir or os.environ.get("MODELS_DIR", "")).strip()
+        models_dir = Path(env_models_dir) if env_models_dir else (project_root / "models")
+        if env_models_dir:
+            os.environ["MODELS_DIR"] = str(models_dir)
         players_model = str(models_dir / "players_best.pt")
         pitch_model = str(models_dir / "pitch_best.pt")
-        thresholds_path = str(project_root / "reports" / "optimal_thresholds.json")
+        v1_thresh = project_root / "artifacts" / "models_meta" / "optimal_thresholds_v1.json"
+        legacy_thresh = project_root / "reports" / "optimal_thresholds.json"
+        thresholds_path = str(v1_thresh if v1_thresh.exists() else legacy_thresh)
 
         if not Path(players_model).exists():
             raise FileNotFoundError(f"Players model not found: {players_model}")
@@ -263,12 +311,16 @@ def main() -> int:
 
         # Optimize inference resolution for local CPU quick-scan (~4x faster on CPU)
         # while keeping full 1280px / 640px precision for remote_gpu or CUDA devices.
-        use_cpu_fast = args.mode == "cpu_quick" and not torch.cuda.is_available()
+        # NOTE: pitch_imgsz MUST stay 640 always — 512 produces too few keypoints
+        # for valid homography on zoomed broadcast angles (confirmed on Serie A clips).
+        use_cpu_fast = (args.mode == "cpu_quick" and not torch.cuda.is_available()) or bool(args.fast_scan)
         det_imgsz = 640 if use_cpu_fast else 1280
-        pitch_imgsz = 512 if use_cpu_fast else 640
+        pitch_imgsz = 640  # Never degrade — 512px kills homography on tight angles
+        enable_siglip = (args.mode == "remote_gpu") or torch.cuda.is_available()
         orig_stdout.write(
             f"[Worker] Mode={args.mode} | CUDA={torch.cuda.is_available()} | "
-            f"det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz}\n"
+            f"models_dir={models_dir} | det_imgsz={det_imgsz}, pitch_imgsz={pitch_imgsz} | "
+            f"siglip={enable_siglip} | jersey_ocr={args.enable_jersey_ocr}\n"
         )
         orig_stdout.flush()
 
@@ -278,13 +330,18 @@ def main() -> int:
             thresholds_path=thresholds_path if Path(thresholds_path).exists() else "",
             det_imgsz=det_imgsz,
             pitch_imgsz=pitch_imgsz,
+            enable_siglip=enable_siglip,
+            enable_jersey_ocr=bool(args.enable_jersey_ocr),
         )
 
+        progress_callback("detecting", 10.0, "Loading YOLOv11 & ONNX Runtime Models...")
         pipeline = MatchAnalysisPipeline(cfg)
+        progress_callback("detecting", 15.0, "Dual-YOLOv11 Detection & Tracking (0%)...")
         result = pipeline.run(
             video_path=str(video_path),
             output_dir=str(output_dir),
             max_seconds=args.max_seconds,
+            start_seconds=args.start_seconds,
         )
 
         # Write metadata file in output_dir
@@ -319,7 +376,7 @@ def main() -> int:
 
     except Exception as e:
         error_msg = str(e)
-        sys.stderr.write(f"\n[Worker Error] {error_msg}\n")
+        sys.stderr.write(f"\n[Worker Error] {error_msg}\n{traceback.format_exc()}\n")
         update_job_status(
             jobs_dir=jobs_dir,
             job_id=args.job_id,

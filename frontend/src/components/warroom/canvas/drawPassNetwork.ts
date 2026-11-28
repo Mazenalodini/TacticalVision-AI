@@ -1,29 +1,31 @@
 import type { Telemetry } from "@/lib/types";
 import { resolvePlayerPositions } from "@/lib/telemetryHelpers";
+import { resolvePlayerIdentity, type MatchOverridesMap } from "@/lib/jerseyOverrides";
 import { PitchViewport, pitchToCanvas } from "./pitchConfig";
 
 /**
- * Draws directed passing network graph on the 2D PitchCanvas without dropping short-clip players.
- * When live players layer is active (`showLivePlayers`), renders pass-anchor waypoints as subtle
- * translucent hollow rings (no duplicate `#id` text) so they never clash visually with live players.
+ * Draws calm, static directed passing corridors on the 2D PitchCanvas without dropping short-clip players.
+ * Renders clean curved links scaled by pass count with crisp static directional arrowheads.
  */
 export function drawPassNetwork(
   ctx: CanvasRenderingContext2D,
   telemetry: Telemetry,
   showLivePlayers: boolean,
-  vp: PitchViewport
+  vp: PitchViewport,
+  overrides?: MatchOverridesMap
 ) {
   const edges = telemetry?.passing_network;
   if (!edges || edges.length === 0) return;
 
   const playerMap = resolvePlayerPositions(telemetry);
 
-  // 1. Draw Directed Curved Arrows
+  // 1. Draw Static Directed Curved Corridors
   ctx.save();
-  for (const edge of edges) {
+  ctx.lineCap = "round";
+  edges.forEach((edge) => {
     const fromP = playerMap.get(edge.from_id);
     const toP = playerMap.get(edge.to_id);
-    if (!fromP || !toP) continue;
+    if (!fromP || !toP) return;
 
     const [x1, y1] = pitchToCanvas(fromP.x, fromP.y, vp);
     const [x2, y2] = pitchToCanvas(toP.x, toP.y, vp);
@@ -31,7 +33,7 @@ export function drawPassNetwork(
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dist = Math.hypot(dx, dy);
-    if (dist < 3) continue;
+    if (dist < 3) return;
 
     // Slight curve so reciprocal passes (A->B and B->A) never collide
     const nx = -dy / dist;
@@ -42,21 +44,21 @@ export function drawPassNetwork(
 
     const isTeam0 = edge.team === 0;
     const color = isTeam0 ? "#38BDF8" : "#FB7185";
-    const alpha = Math.min(0.88, 0.4 + edge.count * 0.14);
+    const alpha = Math.min(0.88, 0.42 + edge.count * 0.14);
 
     ctx.strokeStyle = isTeam0
       ? `rgba(56, 189, 248, ${alpha})`
       : `rgba(251, 113, 133, ${alpha})`;
-    ctx.lineWidth = Math.min(5, Math.max(1.6, edge.count * 1.4));
+    ctx.lineWidth = Math.min(4.8, Math.max(1.6, edge.count * 1.35));
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.quadraticCurveTo(ctrlX, ctrlY, x2, y2);
     ctx.stroke();
 
-    // Arrowhead near target anchor
+    // Static directional arrowhead near target anchor
     const angle = Math.atan2(y2 - ctrlY, x2 - ctrlX);
-    const arrowDist = showLivePlayers ? 10 : 14;
+    const arrowDist = showLivePlayers ? 11 : 14;
     const ax = x2 - arrowDist * Math.cos(angle);
     const ay = y2 - arrowDist * Math.sin(angle);
     const headLen = Math.min(9.5, 6 + edge.count);
@@ -74,7 +76,7 @@ export function drawPassNetwork(
     );
     ctx.closePath();
     ctx.fill();
-  }
+  });
   ctx.restore();
 
   // 2. Draw Passing Anchor Nodes (subtle hollow rings when live dots are ON)
@@ -91,10 +93,10 @@ export function drawPassNetwork(
     const [nx, ny] = pitchToCanvas(p.x, p.y, vp);
     const isTeam0 = p.team === 0;
     const color = isTeam0 ? "#38BDF8" : "#FB7185";
+    const identity = resolvePlayerIdentity(p.track_id, p.stat, overrides);
 
     ctx.save();
     if (showLivePlayers) {
-      // Subtle translucent hollow anchor ring (no duplicate #ID circle clash)
       ctx.beginPath();
       ctx.arc(nx, ny, 7.5, 0, Math.PI * 2);
       ctx.fillStyle = isTeam0
@@ -108,19 +110,42 @@ export function drawPassNetwork(
       ctx.setLineDash([2, 2]);
       ctx.stroke();
     } else {
+      const nodeR = 11;
       ctx.beginPath();
-      ctx.arc(nx, ny, 10.5, 0, Math.PI * 2);
+      ctx.arc(nx, ny, nodeR, 0, Math.PI * 2);
       ctx.fillStyle = "#080D18";
       ctx.fill();
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "bold 9px var(--font-jetbrains), monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(`${p.track_id}`, nx, ny);
+      if (identity.isVerified) {
+        ctx.beginPath();
+        ctx.arc(nx, ny, nodeR + 1.6, 0, Math.PI * 2);
+        ctx.strokeStyle = identity.isCoachOverride
+          ? "#FBBF24"
+          : "rgba(52, 211, 153, 0.85)";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(nx + nodeR * 0.74, ny - nodeR * 0.74, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = identity.isCoachOverride ? "#FBBF24" : "#34D399";
+        ctx.fill();
+        ctx.strokeStyle = "#080D18";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+
+      if (identity.canvasLabel) {
+        const label = identity.canvasLabel;
+        const fontSize = label.length >= 3 ? 7.6 : 9.0;
+        ctx.fillStyle = identity.isVerified ? "#FFFFFF" : "#E2E8F0";
+        ctx.font = `${identity.isVerified ? 800 : 700} ${fontSize}px var(--font-jetbrains), monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, nx, ny + 0.5);
+      }
     }
     ctx.restore();
   }

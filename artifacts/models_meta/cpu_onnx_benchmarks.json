@@ -1,0 +1,35 @@
+{
+  "model_1_players_detector_onnx": {
+    "size_mb": 80.94,
+    "cpu_latency_ms": 4421.21,
+    "cpu_fps": 0.2
+  },
+  "model_2_pitch_keypoints_onnx": {
+    "size_mb": 86.07,
+    "cpu_latency_ms": 1213.43,
+    "cpu_fps": 0.8
+  },
+  "model_3_action_spotting_onnx": {
+    "size_mb": 11.78,
+    "cpu_latency_ms": 22.74,
+    "cpu_fps": 44.0,
+    "pytorch_onnx_max_abs_diff": 0.0,
+    "int8_cpu_benchmark": {
+      "size_mb": 9.56,
+      "cpu_latency_ms": 21.14,
+      "cpu_fps": 47.3
+    }
+  },
+  "model_4_jersey_legibility_onnx": {
+    "size_mb": 16.81,
+    "cpu_latency_ms": 14.2,
+    "cpu_fps": 70.4,
+    "pytorch_onnx_max_abs_diff": 0.0,
+    "optimal_threshold": 0.25,
+    "int8_cpu_benchmark": {
+      "size_mb": 16.82,
+      "cpu_latency_ms": 11.16,
+      "cpu_fps": 89.6
+    }
+  }
+}

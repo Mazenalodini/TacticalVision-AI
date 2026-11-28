@@ -31,8 +31,12 @@ class BroadcastRenderer:
         self.base_pitch_img = self._build_base_pitch()
 
     def _m_to_radar(self, x_m: float, y_m: float) -> Tuple[int, int]:
-        rx = int(self.pad + np.clip(x_m, 0.0, self.pitch.length) * self.scale)
-        ry = int(self.pad + np.clip(y_m, 0.0, self.pitch.width) * self.scale)
+        xv = float(x_m) if np.isfinite(x_m) else 0.0
+        yv = float(y_m) if np.isfinite(y_m) else 0.0
+        rx = int(self.pad + np.clip(xv, 0.0, self.pitch.length) * self.scale)
+        ry = int(self.pad + np.clip(yv, 0.0, self.pitch.width) * self.scale)
+        rx = max(0, min(self.radar_w - 1, rx))
+        ry = max(0, min(self.radar_h - 1, ry))
         return rx, ry
 
     def _build_base_pitch(self) -> np.ndarray:
@@ -110,15 +114,25 @@ class BroadcastRenderer:
                 lineType=cv2.LINE_AA,
             )
 
-            # Compact dark badge with Track ID
-            badge_text = f"#{tid}"
-            (tw, th), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
-            bx1, by1 = cx - tw // 2 - 4, y2 + 5
-            bx2, by2 = cx + tw // 2 + 4, y2 + th + 10
-            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (18, 22, 28), -1)
-            cv2.rectangle(canvas, (bx1, by1), (bx2, by2), col, 1)
-            cv2.putText(canvas, badge_text, (bx1 + 4, by2 - 3),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 245), 1, cv2.LINE_AA)
+            # Identity Badge: verified `#jn` only — referees and unverified players get NO text
+            if cls_id == self.cfg.referee_id:
+                # Referees: yellow ellipse only, zero identity text
+                pass
+            else:
+                jn = ent.get("jersey_number")
+                jv = bool(ent.get("jersey_verified", False))
+                is_verified = jv and jn is not None
+                if is_verified:
+                    badge_text = f"#{jn}"
+                    badge_border = (130, 230, 120)
+                    (tw, th), _ = cv2.getTextSize(badge_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+                    bx1, by1 = cx - tw // 2 - 4, y2 + 5
+                    bx2, by2 = cx + tw // 2 + 4, y2 + th + 10
+                    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (18, 22, 28), -1)
+                    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), badge_border, 1)
+                    cv2.putText(canvas, badge_text, (bx1 + 4, by2 - 3),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 245), 1, cv2.LINE_AA)
+                # Unverified players: clean ellipse only, no fake T# clutter
 
             spd = ent.get("speed_kmh", 0.0)
             if spd >= 14.0 and cls_id != self.cfg.referee_id:
@@ -173,13 +187,18 @@ class BroadcastRenderer:
 
         return canvas
 
-    def draw_radar_frame(self, rec: dict) -> np.ndarray:
+    def draw_radar_frame(self, rec: dict, fps: float = 25.0) -> np.ndarray:
         radar = self.base_pitch_img.copy()
+
+        # When calibration is honestly paused (close-up / replay), render clean empty pitch
+        if rec.get("homography_valid") is False:
+            self.radar_ball_trail.clear()
+            return radar
 
         # 1. Voronoi Pitch Control semi-transparent layer
         vor = rec.get("voronoi_grid")
         if vor is not None and np.any(vor >= 0):
-            vor_rgb = np.zeros((68, 105, 3), dtype=np.uint8)
+            vor_rgb = np.zeros((vor.shape[0], vor.shape[1], 3), dtype=np.uint8)
             vor_rgb[vor == 0] = self.cfg.team_colors_bgr[0]
             vor_rgb[vor == 1] = self.cfg.team_colors_bgr[1]
             vor_resized = cv2.resize(
@@ -213,25 +232,50 @@ class BroadcastRenderer:
             cls_id = int(ent["cls"])
             tm = int(ent.get("team", -1))
             if cls_id == self.cfg.referee_id:
+                # Referee: small yellow dot, zero number text
                 cv2.circle(radar, (rx, ry), 6, self.cfg.referee_color_bgr, -1, cv2.LINE_AA)
             else:
                 col = self.cfg.team_colors_bgr.get(tm, (200, 200, 200))
                 radius = 10 if cls_id == self.cfg.player_id else 11
                 cv2.circle(radar, (rx, ry), radius, col, -1, cv2.LINE_AA)
                 cv2.circle(radar, (rx, ry), radius, (15, 20, 25), 2, cv2.LINE_AA)
-                cv2.putText(radar, str(ent["track_id"]), (rx - 7, ry + 4),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
+                jn = ent.get("jersey_number")
+                jv = bool(ent.get("jersey_verified", False))
+                # Only display verified jersey numbers — no fake T# text
+                if jv and jn is not None:
+                    lbl = f"#{jn}"
+                    cv2.putText(radar, lbl, (rx - 7, ry + 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.34, (15, 20, 25), 1, cv2.LINE_AA)
 
-        # 5. Ball Position & Trail
+        # 5. Ball Position & Discontinuity-Safe Comet Trail (drawn LAST — highest z-index!)
+        if rec.get("is_scene_cut") or rec.get("homography_reset"):
+            self.radar_ball_trail.clear()
+
         bp = rec.get("ball_pitch_xy")
-        if bp is not None:
-            r_ball = self._m_to_radar(bp[0], bp[1])
-            self.radar_ball_trail.append(r_ball)
-            pts = list(self.radar_ball_trail)
-            for i in range(1, len(pts)):
-                cv2.line(radar, pts[i - 1], pts[i], self.cfg.ball_color_bgr, 2, cv2.LINE_AA)
-            cv2.circle(radar, r_ball, 6, (255, 255, 255), -1, cv2.LINE_AA)
-            cv2.circle(radar, r_ball, 6, (10, 10, 10), 2, cv2.LINE_AA)
+        f_idx = int(rec.get("frame_idx", 0))
+        eff_fps = max(1.0, float(fps))
+        if bp is not None and len(bp) >= 2 and np.all(np.isfinite(bp[:2])):
+            bx_m, by_m = float(bp[0]), float(bp[1])
+            if -1.5 <= bx_m <= self.pitch.length + 1.5 and -1.5 <= by_m <= self.pitch.width + 1.5:
+                r_ball = self._m_to_radar(bx_m, by_m)
+                self.radar_ball_trail.append((r_ball[0], r_ball[1], bx_m, by_m, f_idx))
+                pts = list(self.radar_ball_trail)
+                # Strict Discontinuous Trail Break Rule: NEVER connect points with dt > 0.25s OR dist > 8.0m
+                for i in range(1, len(pts)):
+                    rx1, ry1, xm1, ym1, f1 = pts[i - 1]
+                    rx2, ry2, xm2, ym2, f2 = pts[i]
+                    dt_seg = (f2 - f1) / eff_fps
+                    dist_m = float(np.hypot(xm2 - xm1, ym2 - ym1))
+                    if 0.0 < dt_seg <= 0.25 and dist_m <= 8.0:
+                        prog = i / float(len(pts))
+                        thick = max(1, int(round(1.5 + prog * 2.2)))
+                        # Warm gold-white fading comet trail (BGR)
+                        col_t = (int(40 + 180 * prog), int(205 + 45 * prog), int(245))
+                        cv2.line(radar, (rx1, ry1), (rx2, ry2), col_t, thick, cv2.LINE_AA)
+                # High-contrast golden outer glow + dark ring + bright white core
+                cv2.circle(radar, r_ball, 9, (21, 204, 250), 2, cv2.LINE_AA)
+                cv2.circle(radar, r_ball, 6, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(radar, r_ball, 6, (42, 23, 15), 2, cv2.LINE_AA)
 
         # Footer label
         vm = rec.get("voronoi_metrics", {})

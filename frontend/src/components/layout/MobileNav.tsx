@@ -73,7 +73,7 @@ export function MobileNav() {
               className="absolute -top-1.5 w-10 h-0.5 rounded-full bg-tv-cyan"
             />
             <LayoutGrid className="w-5 h-5" />
-            <span className="text-xs mt-0.5 font-bold">{t("mobile.matches")}</span>
+            <span className="text-xs mt-0.5 font-bold whitespace-nowrap">{t("mobile.matches")}</span>
           </Link>
 
           <button
@@ -82,7 +82,7 @@ export function MobileNav() {
             className="relative flex flex-col items-center py-1 px-6 text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
             <PlusCircle className="w-5 h-5 text-tv-mint" />
-            <span className="text-xs mt-0.5 font-semibold">
+            <span className="text-xs mt-0.5 font-semibold whitespace-nowrap">
               {t("mobile.analyze")}
             </span>
           </button>

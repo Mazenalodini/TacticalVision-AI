@@ -8,13 +8,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import matches, telemetry, video, export, assets, upload
+from .routers import matches, telemetry, video, export, assets, upload, models_suite, action_spotting
 
 app = FastAPI(
     title="TacticalVision AI",
     description="Broadcast-grade Football Tactical & Kinematic Analytics API",
     version="1.0.0",
 )
+
 
 # ------------------------------------------------------------------
 # CORS — expose byte-range headers so the browser <video> element
@@ -47,6 +48,8 @@ app.include_router(video.router)
 app.include_router(export.router)
 app.include_router(assets.router)
 app.include_router(upload.router)
+app.include_router(models_suite.router)
+app.include_router(action_spotting.router)
 
 
 @app.get("/api/health")

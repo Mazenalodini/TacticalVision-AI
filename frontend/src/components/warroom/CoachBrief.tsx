@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Compass, Zap, Shield, Flame, Lightbulb } from "lucide-react";
+import { Compass, Zap, Shield, Flame, Lightbulb, Sparkles } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import type { Telemetry } from "@/lib/types";
 import { generateCoachBrief } from "@/lib/coachBriefEngine";
@@ -26,6 +26,7 @@ export function CoachBrief({ telemetry }: CoachBriefProps) {
     progression: Zap,
     defensive: Shield,
     physical: Flame,
+    broadcast: Sparkles,
   };
 
   const accentMap = {
@@ -70,7 +71,7 @@ export function CoachBrief({ telemetry }: CoachBriefProps) {
         </div>
 
         <span className="px-3 py-1 rounded-xl obsidian-well text-xs font-semibold text-slate-300">
-          {t("coach.insights_count")}
+          {insights.length > 4 ? t("coach.insights_count_5") : t("coach.insights_count")}
         </span>
       </div>
 

@@ -277,11 +277,11 @@ export default function MatchHubPage() {
                         <BidiNum className="text-[11px] font-bold text-slate-500">
                           {step.num}
                         </BidiNum>
-                        <span className="text-xs font-bold text-slate-200 truncate">
+                        <span className="text-xs font-bold text-slate-200 leading-snug">
                           {step.title}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 truncate mt-0.5">
+                      <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
                         {step.sub}
                       </p>
                     </div>

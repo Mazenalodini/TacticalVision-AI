@@ -4,8 +4,8 @@
     "fps": 25.0,
     "duration_s": 30.0,
     "possession_pct": {
-      "team_0": 34.7,
-      "team_1": 65.3
+      "team_0": 34.8,
+      "team_1": 65.2
     },
     "pitch_control_pct": {
       "team_0": 32.9,
@@ -17,13 +17,13 @@
       }
     },
     "passes": {
-      "team_0": 0,
-      "team_1": 4
+      "team_0": 2,
+      "team_1": 5
     },
-    "turnovers": 20,
+    "turnovers": 14,
     "expected_threat_xt": {
       "team_0": 0.0,
-      "team_1": 0.002
+      "team_1": 0.0743
     },
     "avg_convex_hull_area_m2": {
       "team_0": 772.0,
@@ -72,7 +72,7 @@
       "max_speed_kmh": 36.5,
       "avg_speed_kmh": 15.1,
       "sprints": 1,
-      "passes_completed": 0,
+      "passes_completed": 1,
       "xt_generated": 0.0,
       "avg_pitch_xy": [
         32.81,
@@ -88,7 +88,7 @@
       "max_speed_kmh": 36.7,
       "avg_speed_kmh": 14.6,
       "sprints": 4,
-      "passes_completed": 0,
+      "passes_completed": 1,
       "xt_generated": 0.0,
       "avg_pitch_xy": [
         27.42,
@@ -297,7 +297,7 @@
       "avg_speed_kmh": 14.0,
       "sprints": 1,
       "passes_completed": 1,
-      "xt_generated": 0.0016,
+      "xt_generated": 0.0047,
       "avg_pitch_xy": [
         50.41,
         12.51
@@ -376,8 +376,8 @@
       "max_speed_kmh": 36.9,
       "avg_speed_kmh": 10.7,
       "sprints": 0,
-      "passes_completed": 0,
-      "xt_generated": 0.0,
+      "passes_completed": 1,
+      "xt_generated": 0.0691,
       "avg_pitch_xy": [
         20.15,
         24.97
@@ -501,7 +501,7 @@
     {
       "team": 1,
       "from_id": 15,
-      "to_id": 24,
+      "to_id": 19,
       "count": 1
     },
     {
@@ -514,6 +514,24 @@
       "team": 1,
       "from_id": 5,
       "to_id": 15,
+      "count": 1
+    },
+    {
+      "team": 0,
+      "from_id": 11,
+      "to_id": 10,
+      "count": 1
+    },
+    {
+      "team": 0,
+      "from_id": 10,
+      "to_id": 11,
+      "count": 1
+    },
+    {
+      "team": 1,
+      "from_id": 34,
+      "to_id": 28,
       "count": 1
     },
     {
@@ -589,24 +607,6 @@
       "speed_kmh": 34.1
     },
     {
-      "type": "pass",
-      "frame": 40,
-      "time_s": 1.6,
-      "team": 1,
-      "from_id": 15,
-      "to_id": 24,
-      "start_xy": [
-        63.55,
-        17.1
-      ],
-      "end_xy": [
-        53.82,
-        25.43
-      ],
-      "distance_m": 12.8,
-      "xt_delta": 0.0016
-    },
-    {
       "type": "sprint",
       "frame": 40,
       "time_s": 1.6,
@@ -631,6 +631,25 @@
       "speed_kmh": 26.5
     },
     {
+      "type": "pass",
+      "frame": 44,
+      "time_s": 1.76,
+      "team": 1,
+      "from_id": 15,
+      "to_id": 19,
+      "start_xy": [
+        62.11,
+        14.08
+      ],
+      "end_xy": [
+        50.69,
+        28.68
+      ],
+      "distance_m": 18.5,
+      "xt_delta": 0.0047,
+      "is_progressive": true
+    },
+    {
       "type": "sprint",
       "frame": 45,
       "time_s": 1.8,
@@ -640,14 +659,14 @@
     },
     {
       "type": "turnover",
-      "frame": 49,
-      "time_s": 1.96,
+      "frame": 48,
+      "time_s": 1.92,
       "from_team": 1,
       "to_team": 0,
       "by_id": 13,
       "xy": [
-        48.24,
-        30.76
+        47.27,
+        31.14
       ]
     },
     {
@@ -658,8 +677,8 @@
       "to_team": 1,
       "by_id": 14,
       "xy": [
-        40.37,
-        31.2
+        39.42,
+        31.01
       ]
     },
     {
@@ -680,14 +699,14 @@
     },
     {
       "type": "turnover",
-      "frame": 98,
-      "time_s": 3.92,
+      "frame": 97,
+      "time_s": 3.88,
       "from_team": 1,
       "to_team": 0,
       "by_id": 16,
       "xy": [
-        39.26,
-        36.92
+        39.14,
+        37.11
       ]
     },
     {
@@ -716,26 +735,14 @@
     },
     {
       "type": "turnover",
-      "frame": 106,
-      "time_s": 4.24,
+      "frame": 111,
+      "time_s": 4.44,
       "from_team": 0,
       "to_team": 1,
       "by_id": 14,
       "xy": [
-        38.12,
-        38.29
-      ]
-    },
-    {
-      "type": "turnover",
-      "frame": 108,
-      "time_s": 4.32,
-      "from_team": 1,
-      "to_team": 0,
-      "by_id": 16,
-      "xy": [
-        37.87,
-        38.72
+        37.13,
+        39.69
       ]
     },
     {
@@ -745,18 +752,6 @@
       "track_id": 20,
       "team": -1,
       "speed_kmh": 34.1
-    },
-    {
-      "type": "turnover",
-      "frame": 112,
-      "time_s": 4.48,
-      "from_team": 0,
-      "to_team": 1,
-      "by_id": 14,
-      "xy": [
-        37.2,
-        39.54
-      ]
     },
     {
       "type": "sprint",
@@ -792,21 +787,22 @@
     },
     {
       "type": "pass",
-      "frame": 148,
-      "time_s": 5.92,
+      "frame": 147,
+      "time_s": 5.88,
       "team": 1,
       "from_id": 14,
       "to_id": 6,
       "start_xy": [
-        40.24,
-        47.11
+        38.53,
+        45.3
       ],
       "end_xy": [
         43.69,
         53.41
       ],
-      "distance_m": 7.2,
-      "xt_delta": -0.0013
+      "distance_m": 9.6,
+      "xt_delta": -0.0013,
+      "is_progressive": false
     },
     {
       "type": "sprint",
@@ -834,50 +830,26 @@
     },
     {
       "type": "turnover",
-      "frame": 210,
-      "time_s": 8.4,
+      "frame": 209,
+      "time_s": 8.36,
       "from_team": 1,
       "to_team": 0,
       "by_id": 21,
       "xy": [
-        30.79,
-        51.3
+        30.2,
+        50.84
       ]
     },
     {
       "type": "turnover",
-      "frame": 219,
-      "time_s": 8.76,
+      "frame": 218,
+      "time_s": 8.72,
       "from_team": 0,
       "to_team": 1,
       "by_id": 28,
       "xy": [
-        28.74,
-        49.95
-      ]
-    },
-    {
-      "type": "turnover",
-      "frame": 232,
-      "time_s": 9.28,
-      "from_team": 1,
-      "to_team": 0,
-      "by_id": 13,
-      "xy": [
-        28.24,
-        46.6
-      ]
-    },
-    {
-      "type": "turnover",
-      "frame": 235,
-      "time_s": 9.4,
-      "from_team": 0,
-      "to_team": 1,
-      "by_id": 19,
-      "xy": [
-        28.19,
-        46.32
+        29.07,
+        48.32
       ]
     },
     {
@@ -898,26 +870,26 @@
     },
     {
       "type": "turnover",
-      "frame": 253,
-      "time_s": 10.12,
+      "frame": 252,
+      "time_s": 10.08,
       "from_team": 1,
       "to_team": 0,
       "by_id": 13,
       "xy": [
-        26.58,
-        42.54
+        27.73,
+        42.04
       ]
     },
     {
       "type": "turnover",
-      "frame": 258,
-      "time_s": 10.32,
+      "frame": 257,
+      "time_s": 10.28,
       "from_team": 0,
       "to_team": 1,
       "by_id": 30,
       "xy": [
-        28.92,
-        41.42
+        29.66,
+        40.45
       ]
     },
     {
@@ -954,38 +926,38 @@
     },
     {
       "type": "turnover",
-      "frame": 281,
-      "time_s": 11.24,
+      "frame": 280,
+      "time_s": 11.2,
       "from_team": 1,
       "to_team": 0,
       "by_id": 11,
       "xy": [
-        32.32,
-        36.71
+        32.82,
+        36.48
       ]
     },
     {
       "type": "turnover",
-      "frame": 295,
-      "time_s": 11.8,
+      "frame": 294,
+      "time_s": 11.76,
       "from_team": 0,
       "to_team": 1,
       "by_id": 7,
       "xy": [
-        37.93,
-        33.49
+        38.84,
+        32.84
       ]
     },
     {
       "type": "turnover",
-      "frame": 318,
-      "time_s": 12.72,
+      "frame": 317,
+      "time_s": 12.68,
       "from_team": 1,
       "to_team": 0,
       "by_id": 3,
       "xy": [
-        42.81,
-        30.14
+        43.64,
+        29.92
       ]
     },
     {
@@ -996,8 +968,8 @@
       "to_team": 1,
       "by_id": 5,
       "xy": [
-        52.95,
-        25.09
+        54.7,
+        24.22
       ]
     },
     {
@@ -1008,26 +980,27 @@
       "from_id": 5,
       "to_id": 15,
       "start_xy": [
-        54.18,
-        18.09
+        55.38,
+        20.94
       ],
       "end_xy": [
-        44.92,
-        6.16
+        44.76,
+        6.25
       ],
-      "distance_m": 15.1,
-      "xt_delta": 0.0004
+      "distance_m": 18.1,
+      "xt_delta": 0.0004,
+      "is_progressive": true
     },
     {
       "type": "turnover",
-      "frame": 468,
-      "time_s": 18.72,
+      "frame": 467,
+      "time_s": 18.68,
       "from_team": 1,
       "to_team": 0,
       "by_id": 10,
       "xy": [
-        32.81,
-        3.46
+        31.37,
+        2.1
       ]
     },
     {
@@ -1047,27 +1020,53 @@
       "speed_kmh": 32.0
     },
     {
+      "type": "pass",
+      "frame": 643,
+      "time_s": 25.72,
+      "team": 0,
+      "from_id": 11,
+      "to_id": 10,
+      "start_xy": [
+        27.09,
+        12.5
+      ],
+      "end_xy": [
+        28.49,
+        15.68
+      ],
+      "distance_m": 3.5,
+      "xt_delta": 0.0,
+      "is_progressive": false
+    },
+    {
+      "type": "pass",
+      "frame": 668,
+      "time_s": 26.72,
+      "team": 0,
+      "from_id": 10,
+      "to_id": 11,
+      "start_xy": [
+        28.81,
+        18.75
+      ],
+      "end_xy": [
+        25.37,
+        17.84
+      ],
+      "distance_m": 3.6,
+      "xt_delta": -0.0011,
+      "is_progressive": false
+    },
+    {
       "type": "turnover",
-      "frame": 688,
-      "time_s": 27.52,
+      "frame": 687,
+      "time_s": 27.48,
       "from_team": 0,
       "to_team": 1,
       "by_id": 34,
       "xy": [
-        22.45,
-        27.4
-      ]
-    },
-    {
-      "type": "turnover",
-      "frame": 694,
-      "time_s": 27.76,
-      "from_team": 1,
-      "to_team": 0,
-      "by_id": 18,
-      "xy": [
-        21.79,
-        35.38
+        22.29,
+        28.97
       ]
     },
     {
@@ -1095,34 +1094,42 @@
       "speed_kmh": 24.6
     },
     {
-      "type": "turnover",
-      "frame": 720,
-      "time_s": 28.8,
-      "from_team": 0,
-      "to_team": 1,
-      "by_id": 28,
-      "xy": [
+      "type": "pass",
+      "frame": 718,
+      "time_s": 28.72,
+      "team": 1,
+      "from_id": 34,
+      "to_id": 28,
+      "start_xy": [
+        21.99,
+        30.82
+      ],
+      "end_xy": [
         8.42,
         32.78
-      ]
+      ],
+      "distance_m": 13.7,
+      "xt_delta": 0.0691,
+      "is_progressive": true
     },
     {
       "type": "pass",
-      "frame": 731,
-      "time_s": 29.24,
+      "frame": 730,
+      "time_s": 29.2,
       "team": 1,
       "from_id": 28,
       "to_id": 17,
       "start_xy": [
-        7.26,
-        30.26
+        8.24,
+        32.07
       ],
       "end_xy": [
         16.14,
         51.84
       ],
-      "distance_m": 23.3,
-      "xt_delta": -0.0673
+      "distance_m": 21.3,
+      "xt_delta": -0.0673,
+      "is_progressive": false
     }
   ],
   "heatmaps": {
@@ -138699,6 +138706,9 @@
       "mean_inlier_reproj_error_m": 1.183
     },
     "ball_coverage_pct": 85.87,
-    "processing_time_s": 241.95
-  }
+    "processing_time_s": 241.95,
+    "broadcast_spotting_ms": 37085.69,
+    "broadcast_spotting_backend": "onnx_int8"
+  },
+  "broadcast_events": []
 }

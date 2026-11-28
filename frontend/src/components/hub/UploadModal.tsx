@@ -17,10 +17,14 @@ import {
   FileVideo,
   Ban,
   StopCircle,
+  BadgeCheck,
+  Zap,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { useLang } from "@/context/LangContext";
 import { useJobPolling } from "@/hooks/useJobPolling";
-import { uploadMatch, cancelJob } from "@/lib/api";
+import { uploadMatch, cancelJob, pingRemoteGpu, type GpuPingResponse } from "@/lib/api";
 import type { JobStage } from "@/lib/types";
 import { BidiNum } from "@/components/ui/BidiNum";
 
@@ -35,12 +39,17 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
   const router = useRouter();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
 
-  // Form state (default CPU quick-scan = 3s)
+  // Form state (default = Full Video without artificial 3s truncation)
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState<string>("");
   const [mode, setMode] = useState<"cpu_quick" | "remote_gpu">("cpu_quick");
-  const [duration, setDuration] = useState<number>(3.0);
+  const [duration, setDuration] = useState<number>(0);
+  const [startSeconds, setStartSeconds] = useState<number>(0);
+  const [enableJerseyOcr, setEnableJerseyOcr] = useState<boolean>(true);
   const [remoteGpuUrl, setRemoteGpuUrl] = useState<string>("");
+  const [gpuPingResult, setGpuPingResult] = useState<GpuPingResponse | null>(null);
+  const [isPingingGpu, setIsPingingGpu] = useState<boolean>(false);
+  const [gpuPingError, setGpuPingError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -167,6 +176,34 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
     }
   };
 
+  const handleTestGpuConnection = async () => {
+    const trimmed = remoteGpuUrl.trim();
+    if (!trimmed) {
+      setGpuPingError(t("upload.err_no_gpu_url"));
+      setGpuPingResult(null);
+      return;
+    }
+    try {
+      localStorage.setItem("tv_remote_gpu_url", trimmed);
+    } catch {
+      // Ignore storage errors
+    }
+    setIsPingingGpu(true);
+    setGpuPingError(null);
+    setGpuPingResult(null);
+    try {
+      const res = await pingRemoteGpu(trimmed);
+      setGpuPingResult(res);
+      if (!res.reachable) {
+        setGpuPingError(res.error || t("upload.gpu_unreachable"));
+      }
+    } catch (err: any) {
+      setGpuPingError(err?.message || t("upload.gpu_unreachable"));
+    } finally {
+      setIsPingingGpu(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
@@ -194,6 +231,8 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
     formData.append("title", title || file.name);
     formData.append("mode", mode);
     formData.append("max_seconds", duration.toString());
+    formData.append("start_seconds", Math.max(0, startSeconds || 0).toString());
+    formData.append("enable_jersey_ocr", String(enableJerseyOcr));
     if (mode === "remote_gpu") {
       formData.append("remote_gpu_url", remoteGpuUrl.trim());
     }
@@ -604,55 +643,220 @@ export function UploadModal({ isOpen, onClose, onMatchCreated }: UploadModalProp
                   </div>
                 </div>
 
-                {/* Mode-Specific Sub-Options */}
-                {mode === "cpu_quick" ? (
-                  <div className="space-y-2.5 p-4 rounded-xl obsidian-well">
-                    <label className="text-xs font-semibold text-slate-300 block">
-                      {t("upload.duration_label")}
+                {/* Remote GPU Tunnel URL + Live Connection Check */}
+                {mode === "remote_gpu" && (
+                  <div className="space-y-3 p-4 rounded-xl obsidian-well border border-tv-cyan/25">
+                    <label className="text-xs font-semibold text-slate-200 block">
+                      {t("upload.gpu_url_label")}
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[2.0, 3.0, 5.0].map((sec) => (
-                        <button
-                          key={`dur-${sec}`}
-                          type="button"
-                          onClick={() => setDuration(sec)}
-                          className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border ${
-                            duration === sec
-                              ? "editorial-tab-active border-tv-cyan/60 text-white shadow-sm"
-                              : "bg-white/[0.04] text-slate-300 hover:text-white border-white/[0.06]"
-                          }`}
-                        >
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        dir="ltr"
+                        type="url"
+                        value={remoteGpuUrl}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRemoteGpuUrl(val);
+                          setGpuPingResult(null);
+                          setGpuPingError(null);
+                          try {
+                            localStorage.setItem("tv_remote_gpu_url", val.trim());
+                          } catch {
+                            // Ignore
+                          }
+                        }}
+                        placeholder={t("upload.gpu_url_placeholder")}
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/45 border border-white/10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-tv-cyan"
+                      />
+                      <button
+                        type="button"
+                        disabled={isPingingGpu || !remoteGpuUrl.trim()}
+                        onClick={handleTestGpuConnection}
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-tv-cyan/15 border border-tv-cyan/45 text-tv-cyan hover:bg-tv-cyan hover:text-slate-950 disabled:opacity-50 transition-all cursor-pointer shrink-0"
+                      >
+                        {isPingingGpu ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>{t("upload.gpu_testing")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Wifi className="w-3.5 h-3.5" />
+                            <span>{t("upload.gpu_test_btn")}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {gpuPingResult?.reachable && (
+                      <div
+                        className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                          gpuPingResult.models_ready
+                            ? "bg-tv-mint/10 border-tv-mint/35 text-tv-mint"
+                            : "bg-tv-amber/10 border-tv-amber/35 text-tv-amber"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-bold">
+                          <Zap className="w-4 h-4 shrink-0" />
+                          <BidiNum>
+                            {gpuPingResult.gpu_name
+                              ? `${gpuPingResult.gpu_name}${
+                                  gpuPingResult.vram_gb ? ` — ${gpuPingResult.vram_gb} GB VRAM` : ""
+                                }`
+                              : "GPU Online"}
+                          </BidiNum>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] font-semibold">
+                          {gpuPingResult.models_ready ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-tv-mint/15">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{t("upload.gpu_models_ready")}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-tv-amber/15">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              <span>
+                                {t("upload.gpu_models_missing")}:{" "}
+                                {gpuPingResult.missing_models.join(", ")}
+                              </span>
+                            </span>
+                          )}
+                          <BidiNum className="text-slate-400">
+                            {`${Math.round(gpuPingResult.latency_ms)}ms`}
+                          </BidiNum>
+                        </div>
+                      </div>
+                    )}
+
+                    {gpuPingError && (
+                      <div className="p-2.5 rounded-xl bg-tv-coral/10 border border-tv-coral/30 text-tv-coral text-xs flex items-center gap-2">
+                        <WifiOff className="w-4 h-4 shrink-0" />
+                        <span className="break-all">{gpuPingError}</span>
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      {t("upload.gpu_hint")}
+                    </p>
+                  </div>
+                )}
+
+                {/* Analysis Span Selector (works for both Local CPU & Remote GPU) */}
+                <div className="space-y-3 p-4 rounded-xl obsidian-well">
+                  <label className="text-xs font-semibold text-slate-300 block">
+                    {t("upload.duration_label")}
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[0, 15, 30, 60].map((sec) => (
+                      <button
+                        key={`dur-${sec}`}
+                        type="button"
+                        onClick={() => setDuration(sec)}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 border ${
+                          duration === sec
+                            ? "editorial-tab-active border-tv-cyan/60 text-white shadow-sm"
+                            : "bg-white/[0.04] text-slate-300 hover:text-white border-white/[0.06]"
+                        }`}
+                      >
+                        {sec === 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span>{t("upload.full_video")}</span>
+                            <span className="text-[10px] text-tv-cyan">
+                              ({t("upload.rec_short")})
+                            </span>
+                          </span>
+                        ) : (
                           <span className="inline-flex items-baseline gap-0.5">
                             <BidiNum>{sec}</BidiNum>
                             <span>{t("seconds")}</span>
                           </span>
-                          {sec === 3.0 && (
-                            <span className="text-[11px] text-tv-cyan">
-                              ({t("upload.rec_short")})
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                    <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.08] text-xs text-slate-300">
+                      <span>{t("upload.start_sec_label")}</span>
+                      <input
+                        dir="ltr"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={startSeconds}
+                        onChange={(e) => setStartSeconds(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-20 px-2 py-1 rounded bg-slate-950/80 border border-white/10 text-end text-xs font-mono text-white focus:outline-none focus:border-tv-cyan"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.08] text-xs text-slate-300">
+                      <span>{t("upload.custom_dur_label")}</span>
+                      <input
+                        dir="ltr"
+                        type="number"
+                        min={0}
+                        step={5}
+                        value={duration}
+                        onChange={(e) => setDuration(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-20 px-2 py-1 rounded bg-slate-950/80 border border-white/10 text-end text-xs font-mono text-white focus:outline-none focus:border-tv-cyan"
+                      />
+                    </label>
+                  </div>
+                  {mode === "cpu_quick" && (
                     <p className="text-xs text-slate-400 leading-relaxed pt-0.5">
                       {t("upload.cpu_hint")}
                     </p>
+                  )}
+                </div>
+
+                {/* Model 4: Auto Jersey Number Recognition Toggle */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enableJerseyOcr}
+                  onClick={() => setEnableJerseyOcr((prev) => !prev)}
+                  className={`w-full p-3.5 rounded-xl border text-start transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                    enableJerseyOcr
+                      ? "bg-tv-mint/[0.07] border-tv-mint/35"
+                      : "obsidian-well border-white/[0.08] hover:border-white/15"
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                        enableJerseyOcr
+                          ? "bg-tv-mint/15 text-tv-mint border border-tv-mint/30"
+                          : "bg-white/[0.05] text-slate-400 border border-white/10"
+                      }`}
+                    >
+                      <BadgeCheck className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white">
+                        {t("upload.jersey_ocr_title")}
+                      </p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed mt-0.5">
+                        {t("upload.jersey_ocr_desc")}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {t("upload.jersey_ocr_cpu_note")}
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-1.5 p-4 rounded-xl obsidian-well">
-                    <label className="text-xs font-semibold text-slate-300 block">
-                      {t("upload.gpu_url_label")}
-                    </label>
-                    <input
-                      dir="ltr"
-                      type="url"
-                      value={remoteGpuUrl}
-                      onChange={(e) => setRemoteGpuUrl(e.target.value)}
-                      placeholder={t("upload.gpu_url_placeholder")}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-tv-cyan"
+                  <span
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors mt-1 ${
+                      enableJerseyOcr
+                        ? "bg-tv-mint border-tv-mint"
+                        : "bg-slate-800 border-white/15"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-slate-950 shadow transform transition-transform mt-[1px] ${
+                        enableJerseyOcr
+                          ? "translate-x-4 rtl:-translate-x-4"
+                          : "translate-x-0.5 rtl:-translate-x-0.5"
+                      }`}
                     />
-                  </div>
-                )}
+                  </span>
+                </button>
 
                 {/* Error Banner */}
                 {submitError && (

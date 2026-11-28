@@ -2,35 +2,64 @@
 
 import React, { useMemo, useState } from "react";
 import { useLang } from "@/context/LangContext";
-import type { MatchEvent } from "@/lib/types";
+import type { ActionSpottingEvent, MatchEvent, PlayerStat } from "@/lib/types";
+import {
+  getActionCategoryLabel,
+  getActionClassLabel,
+  getCategoryMeta,
+} from "@/lib/actionSpottingHelpers";
+import { resolvePlayerIdentity, usePlayerOverrides } from "@/lib/jerseyOverrides";
 import { formatTeamName } from "@/lib/format";
 import { BidiNum } from "@/components/ui/BidiNum";
 
-export type EventFilterType = "all" | "pass" | "turnover" | "sprint";
+export type EventFilterType = "all" | "broadcast" | "pass" | "turnover" | "sprint";
 
 interface EventTimelineProps {
+  matchId?: string;
   events: MatchEvent[];
+  broadcastEvents?: ActionSpottingEvent[];
+  players?: PlayerStat[];
   currentTime: number;
   duration_s: number;
   onSeekToFrame: (frame: number) => void;
   onSeekToTime: (timeSec: number) => void;
+  onReplayEvent?: (timeSec: number) => void;
   onSelectPlayer?: (playerId: number | null) => void;
   docked?: boolean;
 }
 
 export function EventTimeline({
+  matchId,
   events,
+  broadcastEvents = [],
+  players = [],
   currentTime,
   duration_s = 30.0,
   onSeekToFrame,
   onSeekToTime,
+  onReplayEvent,
   onSelectPlayer,
   docked = false,
 }: EventTimelineProps) {
   const { t, lang, dir } = useLang();
+  const { overrides } = usePlayerOverrides(matchId);
+  const statMap = useMemo(() => {
+    const m = new Map<number, PlayerStat>();
+    for (const p of players) m.set(p.track_id, p);
+    return m;
+  }, [players]);
+  const playerLabel = (tid: number) => {
+    const id = resolvePlayerIdentity(tid, statMap.get(tid) ?? null, overrides);
+    return id.isVerified ? id.badgeText : `#${tid}`;
+  };
   const [filterType, setFilterType] = useState<EventFilterType>("all");
   const [hoveredEvent, setHoveredEvent] = useState<{
+    kind: "spatial";
     event: MatchEvent;
+    xPercent: number;
+  } | {
+    kind: "broadcast";
+    event: ActionSpottingEvent;
     xPercent: number;
   } | null>(null);
 
@@ -43,13 +72,25 @@ export function EventTimeline({
       else if (e.type === "turnover") turnovers++;
       else if (e.type === "sprint") sprints++;
     }
-    return { all: events.length, pass: passes, turnover: turnovers, sprint: sprints };
-  }, [events]);
+    return {
+      all: events.length + broadcastEvents.length,
+      broadcast: broadcastEvents.length,
+      pass: passes,
+      turnover: turnovers,
+      sprint: sprints,
+    };
+  }, [events, broadcastEvents]);
 
   const filteredEvents = useMemo(() => {
+    if (filterType === "broadcast") return [];
     if (filterType === "all") return events;
     return events.filter((e) => e.type === filterType);
   }, [events, filterType]);
+
+  const visibleBroadcastEvents = useMemo(() => {
+    if (filterType === "all" || filterType === "broadcast") return broadcastEvents;
+    return [];
+  }, [broadcastEvents, filterType]);
 
   // Render sprints first so high-salience passes & turnovers layer cleanly on top
   const sortedRenderEvents = useMemo(() => {
@@ -124,6 +165,22 @@ export function EventTimeline({
             <BidiNum className="text-[11px]">({counts.turnover})</BidiNum>
           </button>
 
+          {broadcastEvents.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilterType("broadcast")}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                filterType === "broadcast"
+                  ? "bg-violet-400/20 text-violet-300 border border-violet-400/40 font-bold"
+                  : "text-slate-400 hover:text-violet-300"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rotate-45 bg-violet-400" />
+              <span>{t("evt.scope_broadcast")}</span>
+              <BidiNum className="text-[11px]">({counts.broadcast})</BidiNum>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setFilterType("sprint")}
@@ -194,7 +251,11 @@ export function EventTimeline({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSeekToFrame(evt.frame);
+                if (onReplayEvent) {
+                  onReplayEvent(evt.time_s);
+                } else {
+                  onSeekToFrame(evt.frame);
+                }
                 if (isSprint && onSelectPlayer) {
                   onSelectPlayer(evt.track_id);
                 } else if (isPass && onSelectPlayer) {
@@ -205,10 +266,43 @@ export function EventTimeline({
               }}
               onMouseEnter={(e) => {
                 e.stopPropagation();
-                setHoveredEvent({ event: evt, xPercent: xPct });
+                setHoveredEvent({ kind: "spatial", event: evt, xPercent: xPct });
               }}
               className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full cursor-pointer transition-transform hover:scale-150 hover:brightness-125 ${heightClass} ${widthClass} ${
                 isActive ? "ring-2 ring-white scale-125 brightness-150" : ""
+              }`}
+            />
+          );
+        })}
+
+        {/* Model 3 Broadcast Event Diamond Pins */}
+        {visibleBroadcastEvents.map((bev, idx) => {
+          const xPct = duration_s > 0 ? (bev.time_s / duration_s) * 100 : 0;
+          const meta = getCategoryMeta(bev.category);
+          const isActive = Math.abs(currentTime - bev.time_s) <= 0.4;
+
+          return (
+            <div
+              key={`bcast-${bev.class_id}-${bev.frame_idx}-${idx}`}
+              style={{
+                left: `${Math.min(99.2, Math.max(0.8, xPct))}%`,
+                backgroundColor: meta.color,
+                zIndex: isActive ? 55 : 45,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onReplayEvent) {
+                  onReplayEvent(bev.time_s);
+                } else {
+                  onSeekToTime(bev.time_s);
+                }
+              }}
+              onMouseEnter={(e) => {
+                e.stopPropagation();
+                setHoveredEvent({ kind: "broadcast", event: bev, xPercent: xPct });
+              }}
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 rounded-[2px] border border-[#060B10] cursor-pointer transition-transform hover:scale-150 shadow-sm ${
+                isActive ? "ring-2 ring-white scale-125" : ""
               }`}
             />
           );
@@ -232,71 +326,100 @@ export function EventTimeline({
             }}
             className="absolute mb-2 -translate-x-1/2 z-50 pointer-events-none p-2.5 rounded-xl obsidian-popover shadow-2xl text-xs whitespace-nowrap"
           >
-            <div className="flex items-center justify-between gap-3 mb-1">
-              <span className="inline-flex items-center gap-1.5 font-bold text-white">
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    backgroundColor:
-                      hoveredEvent.event.type === "turnover"
-                        ? "#F59E0B"
-                        : hoveredEvent.event.type === "sprint"
-                        ? "#34D399"
-                        : hoveredEvent.event.team === 0
-                        ? "#38BDF8"
-                        : "#FB7185",
-                  }}
-                />
-                <span>{t(`evt.${hoveredEvent.event.type}`)}</span>
-              </span>
-              <BidiNum className="text-[11px] text-slate-400">
-                {hoveredEvent.event.time_s.toFixed(2)}s (F{hoveredEvent.event.frame})
-              </BidiNum>
-            </div>
+            {hoveredEvent.kind === "broadcast" ? (
+              <>
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-white">
+                    <span
+                      className="w-2 h-2 rotate-45 rounded-[1px]"
+                      style={{ backgroundColor: getCategoryMeta(hoveredEvent.event.category).color }}
+                    />
+                    <span>{getActionClassLabel(hoveredEvent.event.label, t)}</span>
+                  </span>
+                  <BidiNum className="text-[11px] text-tv-mint font-bold">
+                    {`${Math.round(hoveredEvent.event.confidence * 100)}%`}
+                  </BidiNum>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                  <span>{getActionCategoryLabel(hoveredEvent.event.category, t)}</span>
+                  <span>·</span>
+                  <BidiNum className="text-tv-cyan font-semibold">
+                    {`${hoveredEvent.event.time_s.toFixed(1)}s`}
+                  </BidiNum>
+                  <span>·</span>
+                  <span className="text-tv-cyan font-bold">{t("evt.replay_3s")}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-white">
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{
+                        backgroundColor:
+                          hoveredEvent.event.type === "turnover"
+                            ? "#F59E0B"
+                            : hoveredEvent.event.type === "sprint"
+                            ? "#34D399"
+                            : hoveredEvent.event.team === 0
+                            ? "#38BDF8"
+                            : "#FB7185",
+                      }}
+                    />
+                    <span>{t(`evt.${hoveredEvent.event.type}`)}</span>
+                  </span>
+                  <BidiNum className="text-[11px] text-slate-400">
+                    {hoveredEvent.event.time_s.toFixed(2)}s (F{hoveredEvent.event.frame})
+                  </BidiNum>
+                </div>
 
-            {hoveredEvent.event.type === "pass" && (
-              <BidiNum className="text-[11px] text-slate-200">
-                #{hoveredEvent.event.from_id} → #{hoveredEvent.event.to_id} ·{" "}
-                {hoveredEvent.event.distance_m}m · xT{" "}
-                <span
-                  className={
-                    hoveredEvent.event.xt_delta >= 0
-                      ? "text-tv-mint font-bold"
-                      : "text-tv-coral font-bold"
-                  }
-                >
-                  {hoveredEvent.event.xt_delta >= 0
-                    ? `+${hoveredEvent.event.xt_delta.toFixed(4)}`
-                    : hoveredEvent.event.xt_delta.toFixed(4)}
-                </span>
-              </BidiNum>
-            )}
+                {hoveredEvent.event.type === "pass" && (
+                  <BidiNum className="text-[11px] text-slate-200">
+                    {`${playerLabel(hoveredEvent.event.from_id)} → ${playerLabel(
+                      hoveredEvent.event.to_id
+                    )} · ${hoveredEvent.event.distance_m}m · xT `}
+                    <span
+                      className={
+                        hoveredEvent.event.xt_delta >= 0
+                          ? "text-tv-mint font-bold"
+                          : "text-tv-coral font-bold"
+                      }
+                    >
+                      {hoveredEvent.event.xt_delta >= 0
+                        ? `+${hoveredEvent.event.xt_delta.toFixed(4)}`
+                        : hoveredEvent.event.xt_delta.toFixed(4)}
+                    </span>
+                  </BidiNum>
+                )}
 
-            {hoveredEvent.event.type === "sprint" && (
-              <div className="text-[11px] text-tv-mint font-semibold flex items-center gap-1.5">
-                <span>
-                  {t("evt.player_num")}
-                  <BidiNum>{hoveredEvent.event.track_id}</BidiNum>
-                </span>
-                <span>·</span>
-                <span className="inline-flex items-baseline gap-1">
-                  <BidiNum>{hoveredEvent.event.speed_kmh.toFixed(1)}</BidiNum>
-                  <span>{t("km_h")}</span>
-                </span>
-              </div>
-            )}
+                {hoveredEvent.event.type === "sprint" && (
+                  <div className="text-[11px] text-tv-mint font-semibold flex items-center gap-1.5">
+                    <span>
+                      {t("evt.player_num")}{" "}
+                      <BidiNum>{playerLabel(hoveredEvent.event.track_id)}</BidiNum>
+                    </span>
+                    <span>·</span>
+                    <span className="inline-flex items-baseline gap-1">
+                      <BidiNum>{hoveredEvent.event.speed_kmh.toFixed(1)}</BidiNum>
+                      <span>{t("km_h")}</span>
+                    </span>
+                  </div>
+                )}
 
-            {hoveredEvent.event.type === "turnover" && (
-              <div className="text-[11px] text-tv-amber font-semibold flex items-center gap-1.5">
-                <span>
-                  {t("evt.recovery_by")}
-                  <BidiNum>{hoveredEvent.event.by_id}</BidiNum>
-                </span>
-                <span className="text-slate-400">
-                  ({formatTeamName(hoveredEvent.event.from_team, lang)} →{" "}
-                  {formatTeamName(hoveredEvent.event.to_team, lang)})
-                </span>
-              </div>
+                {hoveredEvent.event.type === "turnover" && (
+                  <div className="text-[11px] text-tv-amber font-semibold flex items-center gap-1.5">
+                    <span>
+                      {t("evt.recovery_by")}{" "}
+                      <BidiNum>{playerLabel(hoveredEvent.event.by_id)}</BidiNum>
+                    </span>
+                    <span className="text-slate-400">
+                      ({formatTeamName(hoveredEvent.event.from_team, lang)} →{" "}
+                      {formatTeamName(hoveredEvent.event.to_team, lang)})
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

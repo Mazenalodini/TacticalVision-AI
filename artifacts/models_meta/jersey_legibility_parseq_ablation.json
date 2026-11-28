@@ -1,0 +1,73 @@
+{
+  "evaluated_tracklets": 300,
+  "legible_count": 206,
+  "illegible_count": 94,
+  "raw_parseq_no_gate": {
+    "overall_acc_pct": 42.67,
+    "legible_acc_pct": 38.83,
+    "illegible_rejection_pct": 51.06
+  },
+  "full_gated_pipeline": {
+    "overall_acc_pct": 49.33,
+    "legible_acc_pct": 41.75,
+    "illegible_rejection_pct": 65.96
+  },
+  "samples": [
+    {
+      "crop_rel": "test/test/images/0/0_1.jpg",
+      "gt": 4,
+      "pred_gated": 4,
+      "leg_score": 0.97,
+      "ocr_conf": 0.485
+    },
+    {
+      "crop_rel": "test/test/images/8/8_1.jpg",
+      "gt": 33,
+      "pred_gated": 33,
+      "leg_score": 0.98,
+      "ocr_conf": 0.664
+    },
+    {
+      "crop_rel": "test/test/images/12/12_1.jpg",
+      "gt": 14,
+      "pred_gated": 38,
+      "leg_score": 0.97,
+      "ocr_conf": 0.097
+    },
+    {
+      "crop_rel": "test/test/images/16/16_151.jpg",
+      "gt": 36,
+      "pred_gated": 7,
+      "leg_score": 0.98,
+      "ocr_conf": 0.125
+    },
+    {
+      "crop_rel": "test/test/images/28/28_263.jpg",
+      "gt": 8,
+      "pred_gated": 10,
+      "leg_score": 0.97,
+      "ocr_conf": 0.19
+    },
+    {
+      "crop_rel": "test/test/images/32/32_12.jpg",
+      "gt": 10,
+      "pred_gated": 1,
+      "leg_score": 0.98,
+      "ocr_conf": 0.347
+    },
+    {
+      "crop_rel": "test/test/images/36/36_667.jpg",
+      "gt": 14,
+      "pred_gated": 14,
+      "leg_score": 0.97,
+      "ocr_conf": 0.381
+    },
+    {
+      "crop_rel": "test/test/images/44/44_388.jpg",
+      "gt": 8,
+      "pred_gated": 3,
+      "leg_score": 0.97,
+      "ocr_conf": 0.092
+    }
+  ]
+}

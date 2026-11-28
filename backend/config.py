@@ -1,5 +1,6 @@
 """TacticalVision AI — Backend Configuration (Pydantic v2 Settings)."""
 
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -15,13 +16,22 @@ class Settings(BaseSettings):
     tmp_uploads_dir: Path = Path(__file__).resolve().parent / "tmp_uploads"
 
     # Upload / Inference settings (CPU Quick-Scan)
-    cpu_quick_max_seconds: float = 3.0
+    # max_seconds=0 means "Full Video" (no truncation)
+    cpu_quick_max_seconds: float = 0.0
     cpu_quick_min_seconds: float = 2.0
-    cpu_quick_max_seconds_limit: float = 15.0
-    subprocess_timeout_s: int = 900
+    cpu_quick_max_seconds_limit: float = 600.0
+    subprocess_timeout_s: int = 3600
 
     # Remote GPU worker (optional — empty string = disabled)
     remote_gpu_worker_url: str = ""
+
+    def get_default_remote_gpu_url(self) -> str:
+        """Resolve default remote GPU URL from TV_REMOTE_GPU_WORKER_URL or REMOTE_GPU_URL."""
+        return (
+            self.remote_gpu_worker_url
+            or os.environ.get("REMOTE_GPU_URL", "")
+            or os.environ.get("TV_REMOTE_GPU_WORKER_URL", "")
+        ).strip()
 
     # CORS
     frontend_origin: str = "http://localhost:3000"
