@@ -28,13 +28,26 @@
 
 ### العرض البصري المباشر (`Visual Showcase`)
 
-> مخرجات فعلية من تشغيل محرك **`PnLCalib 3D` + `Universal CIELAB` + `Pass 1.5 Savitzky-Golay`** على `Kaggle GPU` لمباراتين حقيقيتين مختلفتين (دوري ألماني مفتوح اللعب، ولقطة منطقة جزاء في الدوري الإيطالي):
+> لقطات حقيقية من استوديو **TacticalVision AI** (واجهة `AR RTL` / `EN LTR`) أثناء تحليل مباريات فعلية بمحرك **`PnLCalib 3D` + `Universal CIELAB` + `Pass 1.5 Savitzky-Golay`** على `Kaggle GPU`:
 
-| اللعب المفتوح — معايرة `PnLCalib 3D`، السيطرة المكانية (`Voronoi`)، ومسار الكرة المحكوم بالفيزياء |
-| :---: |
-| ![Bundesliga 3D Calibration & 2D Tactical Radar](docs/assets/showcase_bundesliga_3d_radar.webp) |
-| **لقطة منطقة الجزاء — إسقاط ثلاثي الأبعاد دقيق للحارس واللاعبين دون انقلاب نصفي مع `PARSeq OCR`** |
-| ![Serie A Penalty Box 3D Calibration](docs/assets/showcase_seriea_box_calibration.webp) |
+<div align="center">
+
+![TacticalVision AI — Hero Landing & Live 60FPS Radar](docs/assets/01_hero_landing.webp)
+<sub><b>الواجهة الرئيسية والرادار التفاعلي الحي (`60FPS Match Hub`)</b> — عرض تكتيكي مباشر باللغة العربية (`RTL`) مع مضلعات التراص (`Compactness Hulls`)، خطوط الدفاع، سيطرة `Voronoi`، والكرة المتوهجة في الطبقة العليا.</sub>
+
+</div>
+
+| غرفة العمليات التكتيكية — البث المحلَّل والرادار المتزامن (`War Room Broadcast`) | مطابقة الرادار المزدوج ومفتّش اللاعب (`Dual 2D Radar & Player Spotlight`) |
+| :---: | :---: |
+| ![War Room — Broadcast Video & 60FPS Radar](docs/assets/02_war_room_broadcast.webp) | ![War Room — Dual 2D Radar Sync & Player Spotlight](docs/assets/03_war_room_dual_radar.webp) |
+| <sub>مزامنة إطار بإطار بين فيديو البث (`1080p · 25 FPS`) ورادار `PitchCanvas` التفاعلي مع `6` طبقات تكتيكية وشريط الأحداث.</sub> | <sub>تطابق `1:1` بين `tactical_radar.mp4` (`PnLCalib 3D + Pass 1.5`) والرادار التفاعلي مع تفعيل مفتّش اللاعب `#15` ومساره.</sub> |
+
+<div align="center">
+
+![TacticalVision AI — Match Library & Multi-Match KPI Cards](docs/assets/04_analytics_lab_suite.webp)
+<sub><b>مكتبة المباريات وبطاقات التحليل المتعدد (`Match Library & KPI Suite`)</b> — استعراض المباريات المحلَّلة (`Serie a goal`, `0bfacc_0`) مع مؤشرات الاستحواذ، السيطرة المكانية، التمريرات، والانتقال الفوري لغرفة العمليات.</sub>
+
+</div>
 
 ---
 
@@ -331,7 +344,7 @@ TacticalVision-AI/
 ├── docs/                             # التوثيق الفني، نوتبوك Kaggle، والأصول البصرية
 │   ├── kaggle_gpu_worker.ipynb       # نوتبوك Kaggle الجاهز (تثبيت تلقائي لـ PnLCalib 3D + SV_kp/SV_lines + Cloudflare Tunnel)
 │   ├── MODELS.md                     # بطاقات النماذج العلمية ومقاييس ONNX INT8 التفصيلية
-│   └── assets/                       # لقطات عرض خفيفة بصيغة WebP (< 70 KB لكل صورة)
+│   └── assets/                       # 4 لقطات استوديو عالية الدقة بصيغة WebP (82–127 KB لكل صورة)
 ├── artifacts/models_meta/            # سجل النماذج، العتبات المعايرة، وتقارير المقاييس
 ├── outputs/match_0*/                 # عينات تليميتري جاهزة للاستعراض الفوري دون أوزان
 └── tests/                            # 45 اختباراً آلياً شاملاً (pytest)
