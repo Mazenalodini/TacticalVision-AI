@@ -2,352 +2,433 @@
 
 # TacticalVision AI
 
-**End-to-end football broadcast computer vision, 32-keypoint metric homography, and a synchronized 60FPS bilingual (`EN`/`AR`) tactical analytics studio.**
+**منصة هندسية متكاملة للذكاء التكتيكي في كرة القدم عبر كاميرا البث التلفزيوني الأحادية — معايرة ملعب ثلاثية الأبعاد (`PnLCalib 3D`)، تتبع هجين (`BoT-SORT + GMC`)، واستوديو تحليلات تفاعلي `60FPS` ثنائي اللغة (`AR RTL` / `EN LTR`).**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-HTTP%20206%20Streaming-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-CUDA%20%7C%20CPU-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-Opset%2017%20INT8-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-HTTP%20206%20%2B%20Atomic%20Jobs-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Next.js 14](https://img.shields.io/badge/Next.js-14%20App%20Router-0F172A?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![D3.js v7](https://img.shields.io/badge/D3.js-v7%20Declarative%20SVG-F9A03C?style=flat-square&logo=d3dotjs&logoColor=white)](https://d3js.org/)
-[![YOLOv11](https://img.shields.io/badge/YOLOv11-Dual%20Model%20CV-0EA5E9?style=flat-square&logo=yolo&logoColor=white)](https://docs.ultralytics.com/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-RANSAC%20Homography-5C3EE8?style=flat-square&logo=opencv&logoColor=white)](https://opencv.org/)
-[![Bilingual](https://img.shields.io/badge/i18n-English%20LTR%20%7C%20Arabic%20RTL-10B981?style=flat-square)](#interactive-analytics--zero-leak-localization-frontend)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PnLCalib 3D](https://img.shields.io/badge/Calibration-PnLCalib%203D%20HRNetV2--w48-8B5CF6?style=flat-square)](engine/pnlcalib_calibrator.py)
+[![BoT-SORT + GMC](https://img.shields.io/badge/Tracking-BoT--SORT%20%2B%20sparseOptFlow%20GMC-0EA5E9?style=flat-square)](engine/detector.py)
+[![Kaggle GPU Ready](https://img.shields.io/badge/Kaggle%20GPU-T4%20%2F%20P100%20Ready-20BEFF?style=flat-square&logo=kaggle&logoColor=white)](docs/kaggle_gpu_worker.ipynb)
+[![Pytest](https://img.shields.io/badge/Pytest-45%2F45%20Passing-10B981?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![i18n Parity](https://img.shields.io/badge/i18n-382%20EN%20%7C%20382%20AR%20RTL-10B981?style=flat-square)](frontend/src/lib/i18n.ts)
 
-[Architecture](#system-architecture--data-pipeline) · [Features](#key-capabilities--engineering-highlights) · [Engineering Highlights](#key-capabilities--engineering-highlights) · [Quick Start](#getting-started) · [API Reference](#rest-api-reference)
+---
+
+### جدول المحتويات السريع
+
+[نبذة عن المنصة](#2-نبذة-عن-المشروع-والمنصة) · [المعمارية الهجينة](#3-المعمارية-الهندسية-وتوبولوجيا-التشغيل-الهجين) · [منظومة النماذج](#4-منظومة-النماذج-الذكية-التدريب-وإدارة-الأوزان) · [خط الأنابيب التكتيكي](#5-الابتكارات-الهندسية-وخط-أنابيب-المعالجة-التكتيكية) · [الاستوديو ومختبر D3](#6-قدرات-الاستوديو-التفاعلي-ومختبر-التحليل) · [واجهات البرمجة والبيانات](#7-عقود-البيانات-وواجهات-البرمجة) · [التحقق والقيود](#8-نتائج-التحقق-الهندسي-ونطاق-النظام) · [التشغيل والإعداد](#9-هيكل-المستودع-ودليل-التشغيل-والإعداد) · [المراجع والمؤلف](#10-المراجع-العلمية-التراخيص-والمؤلف)
 
 </div>
 
 ---
 
-**TacticalVision AI** converts raw single-camera broadcast football footage into calibrated metric coordinates (`105m × 68m` FIFA pitch plane) and renders them inside a synchronized web studio. A two-stage Python CV pipeline extracts player/ball tracks, planar homography, team assignments, Voronoi territorial control, convex hull compactness, and Expected Threat (`xT`), while an isolated FastAPI + Next.js 14 stack streams byte-range H.264 video and signal-stabilized 60FPS interactive analytics.
+### العرض البصري المباشر (`Visual Showcase`)
 
-<details>
-<summary>📖 نظرة عامة على المشروع بالعربية (Arabic Executive Overview)</summary>
+> مخرجات فعلية من تشغيل محرك **`PnLCalib 3D` + `Universal CIELAB` + `Pass 1.5 Savitzky-Golay`** على `Kaggle GPU` لمباراتين حقيقيتين مختلفتين (دوري ألماني مفتوح اللعب، ولقطة منطقة جزاء في الدوري الإيطالي):
+
+| اللعب المفتوح — معايرة `PnLCalib 3D`، السيطرة المكانية (`Voronoi`)، ومسار الكرة المحكوم بالفيزياء |
+| :---: |
+| ![Bundesliga 3D Calibration & 2D Tactical Radar](docs/assets/showcase_bundesliga_3d_radar.webp) |
+| **لقطة منطقة الجزاء — إسقاط ثلاثي الأبعاد دقيق للحارس واللاعبين دون انقلاب نصفي مع `PARSeq OCR`** |
+| ![Serie A Penalty Box 3D Calibration](docs/assets/showcase_seriea_box_calibration.webp) |
+
+---
 
 <div dir="rtl">
 
-**TacticalVision AI** منصة هندسية متكاملة لتحليل مباريات كرة القدم انطلاقاً من فيديو البث التلفزيوني أحادي الكاميرا وصولاً إلى استوديو تحليلات تكتيكي تفاعلي يدعم اللغتين العربية (`RTL`) والإنجليزية (`LTR`) بالكامل.
+## 2. نبذة عن المشروع والمنصة
 
-يعالج محرك الرؤية الحاسوبية (`engine/`) اللقطات عبر نموذجي `YOLOv11` (رصد اللاعبين والحكام وحراس المرمى والكرة، بالإضافة إلى 32 نقطة مرجعية للملعب) مع تتبع `ByteTrack` ومرشح `Kalman` للكرة، ثم يحسب التحويل الهندسي `RANSAC Homography` لإسقاط الإحداثيات على ملعب فيفا القياسي (`105 × 68 م`) وتصنيف الفرق آلياً، قبل استخلاص مؤشرات السيطرة المكانية (`Voronoi`) وتراص الكتل (`Convex Hull`) وخطوط الدفاع والتهديد المتوقع (`xT`).
+**TacticalVision AI** هي منصة هندسية متكاملة لتحليل مباريات كرة القدم بالرؤية الحاسوبية، مصممة لتحويل **فيديو البث التلفزيوني القياسي أحادي الكاميرا** (`Single-Camera Broadcast Footage`) إلى بيانات مترية معايرة على ملعب `FIFA` القياسي (`105m × 68m`) وتقديمها داخل استوديو ويب تحليلي تفاعلي يعمل عند `60FPS`.
 
-على طبقة الويب، يعزل خادم `FastAPI` (`backend/`) عمليات الاستدلال الثقيلة في عمليات فرعية مستقلة مع بث الفيديو عبر `HTTP 206` وإلغاء الوظائف عبر شجرة معرف العملية (`PID`)، بينما تطبق واجهة `Next.js 14` (`frontend/`) مُثبّت إشارة رقمياً (`radarStabilizer.ts`) لاستبعاد القفزات الشاذة وتنعيم الحركة عند `60FPS` إلى جانب مخططات `D3.js` التفاعلية.
+### الفجوة الهندسية التي تعالجها المنصة
+تعتمد أنظمة التتبع الاحترافية داخل الملاعب على مصفوفات كاميرات ثابتة متعددة الزوايا وتجهيزات عتادية باهظة التكلفة. تسد **TacticalVision AI** هذه الفجوة عبر منظومة برمجية عامة ومستقلة عن هوية المباراة (`Match-Agnostic`) تعمل على أي بث تلفزيوني (دوريات مختلفة، إضاءة نهارية أو ليلية، أطقم سادة أو مخططة، لقطات قصيرة أو مباريات كاملة) مع دعم تفويض المعالجة الثقيلة تلقائياً إلى **Kaggle GPU Worker (`Tesla T4 / P100`)** دون الحاجة إلى بطاقة رسوميات محلية.
+
+### المخرجات الفعلية لكل مباراة محلَّلة
+ينتج خط الأنابيب لكل مقطع مرفوع حزمة متكاملة ومترابطة زمنياً:
+- **`broadcast_analyzed.mp4`:** فيديو بث مشفّر بـ `H.264 (libx264)` يتضمن حلقات أرضية ثلاثية المنظور حسب الفريق، عزل الحكام باللون الأصفر دون نصوص، أرقام القمصان الموثَّقة (`#jn`)، خطوط الدفاع الافتراضية المُسقطة عكسياً عبر `H⁻¹` على العشب، مسار الكرة، وشريط `HUD` حي.
+- **`tactical_radar.mp4`:** فيديو رادار تكتيكي `2D` معاير مترياً يعرض خرائط السيطرة المكانية (`Voronoi`)، مضلعات التراص (`Convex Hull`)، خطوط الدفاع، اللاعبين والحكام، ومسار الكرة المحكوم بالفيزياء.
+- **`telemetry.json`:** عقد بيانات موحّد ومُتحقَّق منه عبر `Pydantic v2` يغذي جميع طبقات الاستوديو وتصديرات `CSV` / `JSON`.
+- **غرفة العمليات التفاعلية (`60FPS War Room`) ومختبر `D3.js`:** مزامنة إطار بإطار مع رادار `Canvas 2D`، شبكات التمرير مع `Expected Threat (xT)`، خرائط الحرارة والزخم، وموجز تكتيكي آلي للمدرب (`Bilingual Tactical Coach Brief`) باللغتين العربية (`RTL`) والإنجليزية (`LTR`).
+
+---
+
+## 3. المعمارية الهندسية وتوبولوجيا التشغيل الهجين
+
+تفصل المنصة بين **طبقة العرض (`Presentation Plane`)** و**طبقة التحكم والتنسيق (`Control Plane`)** و**طبقة الرؤية والحوسبة (`Compute & Vision Plane`)** لمنع تجميد خادم الـ API بسبب استيراد `PyTorch` أو `Ultralytics`، ولإتاحة التبديل السلس بين التشغيل المحلي (`Local CPU/CUDA`) والتشغيل السحابي البعيد (`Kaggle GPU Worker` عبر `Cloudflare Tunnel`).
 
 </div>
 
-</details>
-
----
-
-## Interface Preview
-
-The studio UI spans three synchronized views:
-1. **Match Hub (`/`):** Animated 60FPS real-data Hero pitch replay (`HeroPitchVisual`), D3 radial KPI gauges, search/sort toolbar, and match library cards with cached thumbnails and upload/GPU job modal.
-2. **Tactical War Room (`/match/[id]`):** Frame-locked H.264 broadcast/radar `<video>` player paired with a 60FPS 2D `PitchCanvas` (6 toggleable tactical layers), inline zero-overlap `PlayerSpotlight` inspector, `CoachBrief`, `D3MomentumStream`, and `D3PassNetworkPitch`.
-3. **Telemetry & D3 Lab (`/match/[id]`):** Full-match KPI comparison, speed/defensive-line timelines, `D3ZonalControlMatrix` (`12 × 8`), sortable player table, and direct `CSV` / `JSON` data export.
-
-> Screenshot directory initialized at [`docs/screenshots/`](docs/screenshots/.gitkeep). Capture desktop (`1440×900`) views of `/`, `/match/match_01_counter`, and the Telemetry Lab into that folder and uncomment the table below to display previews directly on GitHub.
-
-<!-- Drop screenshots in docs/screenshots/ and uncomment:
-| Match Hub & Live Hero Replay | War Room Video Sync & 2D Radar | Telemetry & D3 Analytics Lab |
-| :---: | :---: | :---: |
-| ![Match Hub Hero](docs/screenshots/hero-hub.png) | ![War Room Radar](docs/screenshots/war-room-radar.png) | ![Telemetry D3 Lab](docs/screenshots/telemetry-d3.png) |
--->
-
----
-
-## Why TacticalVision AI?
-
-| Engineering Challenge | How TacticalVision AI Solves It |
-| :--- | :--- |
-| **Raw Broadcast Perspective → Calibrated Metric Pitch** | Broadcast cameras pan, tilt, and zoom continuously, distorting pixel distances. A dedicated `YOLOv11m-pose` model extracts 32 FIFA pitch landmarks per frame, solves RANSAC planar homography with reprojection gating (`max_homography_reproj_m = 2.6m`) and EMA smoothing (`alpha = 0.25`), and projects every entity onto a `105m × 68m` plane. |
-| **Non-Blocking Dual-Model CV & H.264 Transcoding** | Importing PyTorch and Ultralytics inside a web process slows API startup and risks request-loop starvation. `backend/main.py` keeps the API process lightweight and spawns `backend/services/worker.py` in an isolated subprocess with file-backed logging, PID-tree cancellation, and `cpu_quick` (`640px/512px`) vs `remote_gpu` (`1280px/640px`) execution paths. |
-| **Trustworthy 60FPS Visualization & Bilingual Parity** | Raw frame-by-frame homography dropouts can produce sentinel clamps or jagged jumps on a raw canvas. Frontend signal stabilization (`radarStabilizer.ts`) filters glitch frames, bridges gaps, breaks discontinuous trajectories, and interpolates 60FPS sub-frames—rendered in a synchronized `EN (LTR)` / `AR (RTL)` studio with isolated numeric directionality (`<BidiNum>`). |
-
----
-
-## System Architecture & Data Pipeline
-
 ```mermaid
 flowchart TB
-    FE["Next.js 14 Studio Frontend (Port 3000) — Live Hero, 60FPS PitchCanvas, D3.js Suite & EN/AR RTL"]
-    API["FastAPI Backend (Port 8000) — HTTP 206 Byte-Range Video, Telemetry JSON, Export & Job APIs"]
-    RUNNER["Job Runner (backend/services/job_runner.py) — Isolated Subprocess Spawn, Log File & PID Cancel"]
-    WORKER["CV Worker (backend/services/worker.py) — cpu_quick (640/512) or CUDA/remote_gpu (1280/640)"]
-    ENGINE["CV & Tactical Engine (engine/) — Dual-YOLOv11 + ByteTrack + 32-Kpt Homography + SigLIP/LAB + Voronoi/Hull/xT + libx264"]
-    STORE["Project Storage — models/*.pt, reports/*.json, outputs/<match_id>/"]
+    subgraph Presentation["Presentation Plane — Next.js 14 Studio (Port 3000)"]
+        UI["Match Hub / War Room / Telemetry Lab<br/>TypeScript · AR RTL & EN LTR (382/382 Keys)"]
+        CANVAS["60FPS PitchCanvas (Canvas 2D) + radarStabilizer.ts<br/>Voronoi · Hulls · Def Lines · High-Contrast Top-Layer Ball"]
+        D3LAB["D3.js v7 Analytics Lab & Coach Brief<br/>Pass Network + xT · Momentum Stream · 12x8 Zonal Matrix"]
+    end
 
-    FE <-->|"REST JSON & HTTP 206 Byte-Range Stream"| API
-    API -->|"Start / Poll / Cancel Job"| RUNNER
-    RUNNER -->|"Subprocess (stdout -> .log)"| WORKER
-    WORKER -->|"Execute Pipeline"| ENGINE
-    ENGINE -->|"Read Weights & Optimal Thresholds"| STORE
-    ENGINE -->|"Write telemetry.json, MP4s & Preview PNG"| STORE
-    API -->|"Serve Telemetry, Cached 640x360 Thumbnails & MP4s"| STORE
+    subgraph Control["Control Plane — Local FastAPI Orchestrator (Port 8000)"]
+        API["FastAPI REST + HTTP 206 Byte-Range Video Streamer<br/>Zero-Import Boot · Pydantic v2 Telemetry Contract"]
+        JOBS["JobRunner (backend/services/job_runner.py)<br/>Windows-Safe RLock Atomic JSON · File Logs · PID-Tree Cancel"]
+        RCLIENT["RemoteGPUClient (backend/services/remote_gpu_client.py)<br/>Streamed Upload Progress · Health Probe · Bundle Unpack"]
+    end
+
+    subgraph Compute["Compute & Vision Plane — 3-Pass Offline Pipeline (engine/)"]
+        LOCAL["Local Worker Subprocess (backend/services/worker.py)<br/>CPU Fallback (pitch_best.pt) or Local CUDA"]
+        KAGGLE["Kaggle GPU Worker (gpu_worker/server.py · T4 / P100)<br/>Cloudflare Quick Tunnel · /health · /analyze · /bundle"]
+        P1["Pass 1: Dual Detection (Raw Ball + Person BoT-SORT GMC)<br/>PnLCalib 3D Keyframes + Masked LK Optical Flow + Reservoir Sampling"]
+        P15["Pass 1.5: Zero-Phase Shot Homography Smoothing<br/>Outlier Keyframe Rejection + Savitzky-Golay + Monotonicity Gates"]
+        S123["Stages 1b–3: ResNet-152 Action Spotting (ONNX INT8)<br/>Universal CIELAB Teams · PARSeq Jersey OCR · Physics Ball & Tactics"]
+        P2["Pass 2: Broadcast & 2D Radar Rendering (libx264)<br/>telemetry.json + broadcast_analyzed.mp4 + tactical_radar.mp4"]
+    end
+
+    UI <-->|"REST JSON & HTTP 206"| API
+    CANVAS --- UI
+    D3LAB --- UI
+    API --> JOBS
+    JOBS -->|"Local Mode (cpu_quick)"| LOCAL
+    JOBS -->|"Remote Mode (remote_gpu)"| RCLIENT
+    RCLIENT <-->|"HTTPS via Cloudflare Tunnel"| KAGGLE
+    LOCAL --> P1
+    KAGGLE --> P1
+    P1 --> P15 --> S123 --> P2
+    P2 -->|"outputs/<match_id>/"| API
 ```
 
-### Telemetry Data Contract (`telemetry.json`)
+<div dir="rtl">
 
-All studio views, Canvas layers, D3 visualizations, and `CSV`/`JSON` exports read from a single schema produced by [`engine/pipeline.py`](engine/pipeline.py) and typed in [`frontend/src/lib/types.ts`](frontend/src/lib/types.ts):
+---
+
+## 4. منظومة النماذج الذكية، التدريب، وإدارة الأوزان
+
+تعتمد المنصة على **5 ركائز تعلم عميق ورؤية حاسوبية** متكاملة وموثّقة بالكامل داخل [`artifacts/models_meta/models_registry.json`](artifacts/models_meta/models_registry.json) و[`docs/MODELS.md`](docs/MODELS.md):
+
+| المكوّن | المعمارية (`Architecture`) | المهمة (`Task`) | البيانات وسلسلة التدريب (`Dataset / Training Lineage`) | الأوزان والتزويد (`Weights / Provisioning`) | بيئة التنفيذ (`CUDA` vs `CPU Fallback`) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Entity Detection & Tracking** | Fine-tuned `YOLOv11m` (`1280px`) + `BoT-SORT (sparseOptFlow GMC)` | رصد `ball`, `goalkeeper`, `player`, `referee` وفصل تتبع الأشخاص عن الكرة الخام | مدرَّب على بيانات كرة قدم مخصّصة (`612` train / `38` val / `13` test؛ `14,583` صندوقاً) بعتبات F1 معايرة (`89.76% mAP@50` إجمالي، `99.43%` للاعبين، `95.45%` دقة للكرة) | `players_best.pt` (`38.7 MB`) عبر `MODELS_DIR` أو Kaggle Dataset | **CUDA:** `1280px` + `BoT-SORT (lap)`<br>**CPU:** `640px` + `PlayerByteTracker` |
+| **2. 3D Pitch Calibration** | **Official `PnLCalib 3D`** (`Dual HRNetV2-w48` + `FramebyFrameCalib` PnL) + Masked LK Optical Flow | كشف `57` نقطة دلالية + `23` خطاً ثلاثي الأبعاد (بما فيها القوائم `Z = -2.44m`) وتقدير `(K, R, t)` وحساب `H_img_to_fifa` | أوزان `PnLCalib` الرسمية المدرّبة على `SoccerNet-Calibration`؛ والبديل `pitch_best.pt` (`YOLOv11m-pose`, `32` نقطة، `92.55% Pose mAP@50`) | `SV_kp` (`253 MB`) و `SV_lines` (`253 MB`) تُحمّل تلقائياً من GitHub Releases وتُخزّن في `/kaggle/working/pnlcalib_weights`؛ و`pitch_best.pt` (`41.3 MB`) في `MODELS_DIR` | **CUDA:** `pnlcalib_3d` (keyframes + flow)<br>**CPU:** `yolo_pitch_fallback` (`pitch_best.pt` + Law 1–4 + flow) |
+| **3. Universal Team Affiliation** | **Match-Agnostic `CIELAB` 15-D + 2-Stage Outlier-Trimmed `KMeans(k=2)`** (+ `HSV` Fusion عند `ΔE < 16`) | فصل الفريقين دون تدريب مسبق، عزل الحكام، إسناد الحراس حسب المرمى الدفاعي، واستخراج `Hex` القمصان | خوارزمية غير خاضعة للإشراف (`Unsupervised`) مستقلة عن المباراة؛ أخذ عينات `Algorithm R Reservoir` عبر `0% → 100%` من الفيديو مع بوابة جودة اللاعب التكتيكي | لا تتطلب أوزاناً خارجية (تشغيل حتمي فوري على `CPU` و `GPU`) | متطابقة الدقة على **`CUDA`** و **`CPU`** (`ΔE_Lab = 38.5–57.9` عبر المباريات) |
+| **4. Broadcast Action Spotting** | `ResNet-152 (TF2 ONNX)` + `PCA-512` + `Dilated ResTCN + 2L Bi-GRU + 4H Self-Attention` (`2.94M` params) | رصد `17` حدث بث تلفزيوني (`Goal`, `Shots`, `Corner`, `Cards`, ...) عند `2 FPS` مع `Cross-Class NMS` و`Corroborated Goal Rescue` | مستخرج ميزات متوافق مع معيار `SoccerNet-v2` (معالجة `BGR` + طرح متوسطات `Caffe [103.939, 116.779, 123.68]`)؛ رأس زمني حقّق `62.63% Loose a-mAP` و`47.95% Tight a-mAP` | `resnet152_tf2_backbone.onnx`, `soccernet_pca512_tf2_weights.npz`, `action_spotting_v1_int8.onnx` (`9.1 MB`) / `.pt` | **CUDA / CPU:** `ONNX Runtime` (`INT8` على CPU بزمن `21.14 ms/window`، و`FP32/CUDA` عند التوفر) |
+| **5. Jersey Number Recognition (`OCR`)** | `MobileNetV3-Large-100` Legibility Gate (`4.20M` params) + `PARSeq` + Tracklet Voting | تصفية لقطات القمصان الواضحة (`Crop F1 = 90.47%`) وقراءة وتصويت رقم القميص الموثق (`1..99`) مع دعم التعديل اليدوي للمدرب | بوابة الوضوح مدرّبة على لقطات جذع اللاعبين (`Tracklet F1 = 85.97%`, `99.53% recall`) + نموذج `PARSeq` مسبق التدريب (مع تراجع `RapidOCR` عند غياب الإنترنت) | `jersey_legibility_v1_int8.onnx` (`16.0 MB`) / `.pt` + أوزان `PARSeq` عبر `torch.hub` | **CUDA:** `PARSeq CUDA` + Gate<br>**CPU:** `INT8 ONNX` (`11.16 ms`) + `RapidOCR` fallback |
+
+### سياسة البيانات، التدريب، وفصل الأوزان الثنائية (`Weight Separation`)
+- **فصل الأوزان عن Git:** جميع ملفات الأوزان الثقيلة (`*.pt`, `*.pth`, `*.onnx`, `*.npz`, `*.npy`) والفيديوهات الخام والمخرجة (`*.mp4`) مستبعدة تماماً عبر [`.gitignore`](.gitignore) للحفاظ على مستودع نظيف وسريع الاستنساخ.
+- **التزويد التلقائي على Kaggle GPU:** تُربط الأوزان الثمانية الأساسية كـ `Kaggle Dataset` للقراءة فقط (`MODELS_DIR` دون نسخ)، بينما يقوم [`docs/kaggle_gpu_worker.ipynb`](docs/kaggle_gpu_worker.ipynb) تلقائياً باستنساخ `mguti97/PnLCalib` وتحميل أوزان `SV_kp` و`SV_lines` الرسمية من `GitHub Releases` وتخزينها مؤقتاً في `/kaggle/working/pnlcalib_weights` مع التحقق المباشر عبر `GET /health`.
+- **تحرير الذاكرة المتسلسل (`Sequential Stage Memory Release`):** يُفرّغ [`engine/pipeline.py`](engine/pipeline.py) نماذج الكشف والمعايرة (`YOLO` و`PnLCalib`) من الـ `RAM/VRAM` فور انتهاء `Pass 1` وقبل تحميل `ResNet-152` ثم `PARSeq OCR` لمنع أخطاء نفاد الذاكرة (`OOM`) على الفيديوهات الطويلة.
+
+---
+
+## 5. الابتكارات الهندسية وخط أنابيب المعالجة التكتيكية
+
+### 1) `Pass 1.5` — تنعيم الهوموغرافي بلا إزاحة طورية (`Zero-Phase Shot-Level Homography Smoothing`)
+تُنفَّذ مرحلة ما بعد المعالجة في [`smooth_shot_homographies`](engine/homography.py) قبل إسقاط الإحداثيات النهائية للاعبين والكرة وقبل تصيير `tactical_radar.mp4`:
+- **تقسيم اللقطات المتصلة:** فصل تسلسل المصفوفات `(H_t, hv_t, is_scene_cut_t)` عند القطوع المشهدية الحقيقية (مقاسة بفرق مدرج `HSV L1 > 0.45` مع `MAD > 28.0`) أو فترات انقطاع المعايرة.
+- **رفض الإطارات المفتاحية الشاذة (`Outlier Keyframe Rejection`):** داخل كل لقطة متصلة، يُقاس مركز الملعب المُسقط `(cx_t, cy_t)` والمقياس المحلي `∂X/∂u`؛ وأي قفزة معزولة (`1–3` إطارات) تنحرف `> 6.0m` عن الوسيط المتحرك (`±7` إطارات) أو `> 45%` في المقياس تُستبدل باستيفاء خطي نظيف بين أقرب إطارين سليمين.
+- **تنعيم `Zero-Phase Savitzky-Golay`:** تطبيق `scipy.signal.savgol_filter` (نافذة فردية متكيفة `~0.6s`, `polyorder=2`) على المصفوفات المطبّعة `H_t / H_t[2,2]`.
+- **البوابات الهندسية الصارمة:** التحقق من قانون الرتابة الاتجاهية للبث (`∂X/∂u > 0`, `∂Y/∂v > 0`, `det(J) > 0`)، اتساق جانب منطقة الجزاء (`Law 2`)، وبوابة بقاء اللاعبين داخل الملعب (`Player In-Bounds Gate`). في اللقطات القريبة الحقيقية أو الاحتفالات عديمة المعالم الهندسية، يضبط المحرك `hv = false` بصدق بدلاً من تجميد إسقاط خاطئ.
+
+### 2) تتبع الكرة المحكوم بالفيزياء ونزاهة المسار (`Physics-Gated Ball Tracking & Trail Integrity`)
+- **فصل الكرة عن فلتر `BoT-SORT`:** في [`engine/detector.py`](engine/detector.py)، يُنفَّذ `players_model.predict()` مرة واحدة للإبقاء على **100% من كشوفات الكرة الخام** (`ball_conf`), بينما تُمرَّر صناديق الأشخاص فقط إلى `BOTSORT(gmc_method="sparseOptFlow")`.
+- **إلغاء التثبيت القسري على الزوايا (`No Corner Clamping`):** في [`engine/pipeline.py`](engine/pipeline.py) و[`filter_and_interpolate_ball_pitch`](engine/tactics.py)، تُستبعد أي كرة مسقطة خارج `[-1.5..106.5, -1.5..69.5]` أو خلف الأفق (`|w| <= 0.05`) وتُحوَّل إلى `None` بدلاً من قصها إلى `(0, 0)` أو `(105, 68)`.
+- **فلترة السرعة والاستيفاء:** رفض قفزات `1–2` إطار غير المتماسكة التي تتجاوز سقف سرعة كرة القدم الفيزيائي (`<= 38.0 m/s` أو `> 10.0m` في إطار واحد)، واستيفاء الفجوات القصيرة (`1..8` إطارات، `<= 0.40s` بسرعة `<= 35.0 m/s`) مع تنعيم خفيف من `5` نقاط (`[0.12, 0.22, 0.32, 0.22, 0.12]`).
+- **قاعدة قطع المسار الصارمة (`Discontinuous Trail Break`):** في كلٍّ من [`engine/renderer.py`](engine/renderer.py) و[`drawPlayers.ts`](frontend/src/components/warroom/canvas/drawPlayers.ts)، يُمنع رياضياً رسم خط يصل بين نقطتي كرة إذا تجاوزت الفجوة الزمنية `0.25s` أو المسافة المترية `8.0m`.
+
+### 3) تصنيف الفرق العام (`Universal Match-Agnostic Team Affiliation`)
+في [`engine/team_classifier.py`](engine/team_classifier.py):
+- **عينات طبقية شاملة (`Algorithm R Reservoir Sampling`):** جمع حتى `720` عينة صدرية موزعة باحتمالية متساوية على طول الفيديو (`0% → 100%`) لضمان عدم تشبّع التجميع بالثواني الأولى.
+- **بوابة الجودة التكتيكية (`is_valid_tactical_box`):** قبول اللاعبين التكتيكيين فقط (`0.04 <= h/H <= 0.22`، نسبة أبعاد `0.18..1.25`، بعيداً عن شريط البث العلوي والحدود، غير متداخلين `IoU < 0.15`).
+- **عزل الجذع + وصف `CIELAB` (15 بُعداً):** قص شريط الصدر الداخلي (`y: 16%..48%, x: 26%..74%`)، معايرة تكيفية لعشب الملعب، قناع بشرة ذكي يحفظ القمصان الكريمية والبرتقالية والخضراء، ثم **تجميع `KMeans(k=2)` على مرحلتين بحذف أبعد `15%` من الشواذ**، وتصويت موزون بالهامش `|d0 - d1| / (d0 + d1)` لكل مسار لاعب مع استخراج `team_a_kit_hex` و`team_b_kit_hex`.
+
+### 4) محرك التحليلات التكتيكية والكينماتيكية (`Tactical & Kinematic Analytics Engine`)
+في [`engine/tactics.py`](engine/tactics.py):
+- **سلامة الاستحواذ والتمريرات:** آلة حالة غير متماثلة لتمييز التمريرات عن لمسات المدافعين العابرة (`min_turnover_frames = 5`), مدعومة بتراجع مسافة بكسلية (`<= 0.95 * box_h`) عند الفجوات المعايرية العابرة وعتبة تهيئة `>= 5` لمسات في `HUD`.
+- **التهديد المتوقع (`Expected Threat — xT`):** مصفوفة `Karun Singh (12 × 8)` محصنة ضد `NaN/Inf` وحدود المرمى (`lookup_xt`).
+- **السيطرة المكانية والتراص:** حساب `Voronoi` على شبكة `105 × 68` (الأثلاث الدفاعي والوسطي والهجومي)، مساحة المحدّب (`Convex Hull m²`)، وعمق خط الدفاع الأخير (`def_x`).
+- **معايرة الانطلاقات السريعة (`High-Speed Sprints`):** سرعة متدحرجة ملساء `>= 6.2 m/s` (`22.3 km/h`) مستمرة لمدة `>= 0.55s` مع تحمل ومضات التتبع (`1–2` إطار) وفترة تهدئة `4.0s` ورفض القفزات غير البشرية (`> 11.5 m/s`).
+
+---
+
+## 6. قدرات الاستوديو التفاعلي ومختبر التحليل
+
+توفر واجهة `Next.js 14` (`frontend/src/`) تجربة تحليلية متزامنة بالكامل في ثلاث مساحات عمل:
+1. **مركز المباريات (`Match Hub — /`):** عرض حي متحرك عند `60FPS` لأفضل نافذة تكتيكية (`HeroPitchVisual`)، بطاقات المباريات مع صور مصغرة مخبّأة، البحث والفرز، ونافذة رفع متكاملة (`UploadModal`) تدعم التحليل الكامل دون اقتطاع (`Full Video`) والاتصال المباشر بـ `Kaggle Remote GPU` مع شريط رفع وتقدم حي.
+2. **غرفة العمليات التكتيكية (`Tactical War Room — /match/[id]`):**
+   - مشغل فيديو `H.264` متزامن إطاراً بإطار مع رادار `PitchCanvas` التفاعلي (`60FPS` عبر [`radarStabilizer.ts`](frontend/src/lib/radarStabilizer.ts)).
+   - **كرة عالية الوضوح في الطبقة العليا (`Highest Z-Index`):** تُرسم الكرة ومسارها الذهبي المتدرج فوق جميع الطبقات واللاعبين (`core r=5.5px` أبيض، حلقة `#0F172A`، وهج `#FACC15`).
+   - **توقف صادق ونظيف عند `hv = false`:** في اللقطات القريبة والاحتفالات يُرسم الملعب الفارغ فقط مع شارة توقف مركزية دون أي نقاط أو طبقات متبقية.
+   - `6` طبقات تكتيكية قابلة للتبديل (`Voronoi`, `Convex Hulls`, `Def Lines`, `Heatmap`, `Pass Network`, `Players`)، مفتّش اللاعب المدمج (`PlayerSpotlight`) مع إمكانية تعديل رقم القميص يدوياً (`Coach Override`)، وشريط أحداث تفاعلي يدعم **إعادة اللقطة (`Replay -3s`)** وأحداث `Model 3 Action Spotting`.
+3. **مختبر التحليلات (`D3.js Analytics Lab`) والموجز التكتيكي (`CoachBrief`):**
+   - شبكة التمريرات التفاعلية (`D3PassNetworkPitch`)، تدفق الزخم والسيطرة (`D3MomentumStream`)، مصفوفة السيطرة المناطقية `12 × 8` (`D3ZonalControlMatrix`)، رادار اللاعب (`D3PlayerRadar`)، وجدول اللاعبين القابل للتصدير (`CSV` / `JSON`).
+   - محرك صياغة تكتيكية آلي ([`coachBriefEngine.ts`](frontend/src/lib/coachBriefEngine.ts)) متوافق تماماً مع اللغتين العربية (`RTL`) والإنجليزية (`LTR`) بتطابق **`382 / 382` مفتاح ترجمة** في [`i18n.ts`](frontend/src/lib/i18n.ts) وحماية اتجاه الأرقام عبر `<BidiNum>`.
+
+---
+
+## 7. عقود البيانات وواجهات البرمجة
+
+### 1) واجهات خادم التنسيق المحلي (`FastAPI — backend/`, Port `8000`)
+
+| الطريقة | المسار (`Endpoint`) | الوظيفة والتفاصيل التقنية |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | فحص جاهزية الخادم (`{"status": "ok", "service": "TacticalVision AI"}`). |
+| `GET` | `/api/matches` | سرد جميع المباريات المتاحة في `outputs/` (العينات والمباريات المرفوعة). |
+| `GET` | `/api/matches/{match_id}` | إرجاع بطاقة الملخص (`MatchCard`) لمباراة محددة. |
+| `GET` | `/api/matches/{match_id}/telemetry` | بث ملف `telemetry.json` مباشرة عبر `FileResponse` دون إعادة تسلسل مكلفة. |
+| `GET` | `/api/matches/{match_id}/video/{video_type}` | بث `broadcast` أو `radar` مع دعم **`HTTP 206 Partial Content`** للتقديم والترجيع الفوري. |
+| `GET` | `/api/matches/{match_id}/thumbnail` | توليد وتخزين صورة مصغرة `640×360 JPEG` للبطاقة. |
+| `GET` | `/api/matches/{match_id}/export` | تصدير بيانات اللاعبين أو الأحداث بصيغة `CSV` أو `JSON` (`?format=csv\|json&scope=players\|events`). |
+| `POST` | `/api/gpu/ping` | التحقق من اتصال `Remote GPU Worker` وإرجاع جاهزية `CUDA` و`PnLCalib 3D`. |
+| `POST` | `/api/matches/analyze` | رفع فيديو (`.mp4/.mov/.mkv`) وتشغيل التحليل (`cpu_quick` أو `remote_gpu`، `max_seconds=0` للفيديو الكامل، `enable_jersey_ocr`)؛ يرجع `202` + `job_id`. |
+| `GET` | `/api/jobs/{job_id}` | متابعة التقدم الحي للمهمة (`status`, `progress_pct`, `stage_label`, `elapsed_s`, `match_id`). |
+| `POST` | `/api/jobs/{job_id}/cancel` | إنهاء شجرة العمليات (`PID-Tree`) وتنظيف الملفات المؤقتة فوراً. |
+| `DELETE` | `/api/matches/{match_id}` | حذف مباراة مرفوعة من المستخدم (محمي بـ `403` ضد حذف مباريات `match_0*` الأساسية). |
+| `GET` | `/api/models/suite` | استعراض سجل النماذج الأربعة وحالة الأوزان ومعايير التقييم. |
+| `GET` / `POST` | `/api/action-spotting/matches`, `/analyze`, `/results/{run_id}` | تشغيل واستعراض نتائج `Model 3 Action Spotting` على متجهات `SoccerNet (.npy/.npz)` لمباراة كاملة. |
+
+### 2) واجهات عامل الـ GPU السحابي (`gpu_worker/server.py`, Port `8001`)
+
+| الطريقة | المسار (`Endpoint`) | الوظيفة والاستجابة |
+| :--- | :--- | :--- |
+| `GET` | `/health` | يرجع `gpu_available`, `gpu_name`, `vram_gb`, `models_ready`, `missing_models`, بالإضافة إلى **`calibrator_backend`** (`"pnlcalib_3d"` أو `"yolo_pitch_fallback"`) و**`pnlcalib_ready`** (`true`/`false`). |
+| `POST` | `/analyze` | استقبال الفيديو بحد أقصى `500 MB` وتشغيل خط الأنابيب الكامل غير المتزامن (`202` + `job_id`). |
+| `GET` | `/jobs/{job_id}/status` | بث حالة المراحل (`detecting`, `classifying`, `computing`, `encoding`, `completed`), النسبة المئوية, وآخر أسطر السجل. |
+| `GET` | `/jobs/{job_id}/bundle` | تنزيل حزمة `bundle.zip` (`telemetry.json` + الفيديوهين + المعاينة) وتنظيف مجلد العمل تلقائياً. |
+| `POST` | `/jobs/{job_id}/cancel` | إيقاف المهمة وتنظيف ملفاتها المؤقتة فوراً. |
+
+### 3) عقد بيانات التليميتري (`telemetry.json` Schema Contract)
+
+</div>
 
 ```jsonc
 {
+  "match_info": {
+    "source_video": "0bfacc_0.mp4",
+    "resolution": [1920, 1080],
+    "fps": 25.0,
+    "pitch_dimensions_m": [105.0, 68.0],
+    "team_colors": { "0": "#1EC8FF", "1": "#FF5555" },
+    "team_a_kit_hex": "#A35F46",
+    "team_b_kit_hex": "#F5F2E4"
+  },
   "summary": {
     "total_frames": 750,
     "fps": 25.0,
     "duration_s": 30.0,
-    "possession_pct": { "team_0": 54.2, "team_1": 45.8 },
+    "possession_pct": { "team_0": 54.0, "team_1": 46.0 },
     "pitch_control_pct": {
-      "team_0": 51.6,
-      "team_1": 48.4,
-      "team_0_zonal": { "defensive_third": 64.1, "middle_third": 49.8, "attacking_third": 38.2 }
+      "team_0": 38.2,
+      "team_1": 61.8,
+      "team_0_zonal": { "defensive_third": 73.5, "middle_third": 37.0, "attacking_third": 4.0 }
     },
-    "passes": { "team_0": 14, "team_1": 9 },
-    "turnovers": 6,
-    "expected_threat_xt": { "team_0": 0.0842, "team_1": 0.0519 },
-    "avg_convex_hull_area_m2": { "team_0": 980.4, "team_1": 1045.1 },
-    "top_speed_kmh": 31.4
+    "passes": { "team_0": 6, "team_1": 9 },
+    "turnovers": 2,
+    "expected_threat_xt": { "team_0": 0.0205, "team_1": 0.0056 },
+    "avg_convex_hull_area_m2": { "team_0": 710.6, "team_1": 1282.1 },
+    "top_speed_kmh": 30.6
   },
-  "players": [
-    {
-      "track_id": 7, "team": 0, "role": "player",
-      "distance_m": 112.6, "max_speed_kmh": 28.4, "avg_speed_kmh": 13.5,
-      "sprints": 2, "passes_completed": 3, "xt_generated": 0.0214,
-      "avg_pitch_xy": [61.2, 28.5], "frames_visible": 612
-    }
-  ],
-  "passing_network": [
-    { "team": 0, "from_id": 7, "to_id": 11, "count": 2 }
-  ],
-  "events": [
-    { "type": "pass", "frame": 142, "time_s": 5.68, "team": 0, "from_id": 7, "to_id": 11, "start_xy": [55.1, 24.0], "end_xy": [72.4, 19.3], "distance_m": 17.9, "xt_delta": 0.0112 },
-    { "type": "sprint", "frame": 210, "time_s": 8.40, "track_id": 11, "team": 0, "speed_kmh": 26.8 },
-    { "type": "turnover", "frame": 388, "time_s": 15.52, "from_team": 1, "to_team": 0, "by_id": 4, "xy": [42.0, 39.1] }
-  ],
-  "heatmaps": { "team_0": "int[8][12]", "team_1": "int[8][12]" },
   "frames": [
     {
-      "f": 0, "t": 0.0,
-      "players": [{ "id": 7, "team": 0, "role": "p", "x": 48.2, "y": 31.4, "spd": 14.1 }],
-      "ball": [51.0, 33.8],
-      "vor": [52.3, 47.7],
-      "def_x": { "0": 24.5, "1": 74.2 }
+      "f": 236,
+      "t": 15.73,
+      "hv": true,
+      "players": [
+        { "id": 18, "team": 1, "role": "p", "x": 82.4, "y": 46.1, "spd": 24.8, "jn": 23, "jv": true }
+      ],
+      "ball": [84.1, 45.3],
+      "vor": [57.4, 42.6],
+      "def_x": { "0": 77.2, "1": 94.8 }
     }
   ],
-  "match_info": {
-    "source_video": "clip.mp4", "resolution": [1920, 1080], "fps": 25.0,
-    "pitch_dimensions_m": [105, 68], "team_colors": { "0": "#1EC8FF", "1": "#FF5555" }
-  },
+  "events": [
+    { "type": "pass", "frame": 142, "time_s": 5.68, "team": 1, "from_id": 7, "to_id": 11, "distance_m": 16.4, "xt_delta": 0.0091, "is_progressive": true },
+    { "type": "sprint", "frame": 361, "time_s": 14.44, "track_id": 18, "team": 1, "speed_kmh": 24.8 }
+  ],
+  "broadcast_events": [
+    { "class_id": 2, "label": "Goal", "category": "scoring", "half": 1, "frame_idx": 40, "time_s": 21.33, "minute_str": "00:21", "confidence": 0.181 }
+  ],
   "engine_diagnostics": {
-    "homography": { "valid_frames": 732, "rejected_frames": 18, "stability_rate_pct": 97.6, "mean_inlier_reproj_error_m": 0.48 },
-    "ball_coverage_pct": 81.2, "processing_time_s": 48.3
+    "calibrator_backend": "pnlcalib_3d",
+    "homography": {
+      "valid_frames": 384,
+      "rejected_frames": 0,
+      "flow_propagated_frames": 734,
+      "stability_rate_pct": 100.0,
+      "shots_smoothed": 1,
+      "outliers_replaced": 36,
+      "frames_smoothed": 750
+    },
+    "team_classifier": { "mode": "cielab_universal_primary", "delta_e_lab": 57.89, "stratified_samples_used": 720 },
+    "ball_coverage_pct": 90.67,
+    "jersey_recognition": { "gate_backend": "onnx_int8", "ocr_status": "parseq_cuda_active", "verified_players": 14 },
+    "broadcast_spotting_backend": "onnx_int8"
   }
 }
 ```
 
+<div dir="rtl">
+
+> ملاحظة: تدعم الواجهة تخصيص أرقام القمصان يدوياً للمدرب (`Coach Override`) محلياً لكل مباراة عبر [`frontend/src/lib/jerseyOverrides.ts`](frontend/src/lib/jerseyOverrides.ts) مع مزامنة فورية على الرادار وشبكة التمريرات وجدول اللاعبين.
+
 ---
 
-## Key Capabilities & Engineering Highlights
+## 8. نتائج التحقق الهندسي ونطاق النظام
 
-### Computer Vision & Spatial Engine (`engine/`)
+### 1) مؤشرات التحقق الآلي والمعملي المُقاسة فعلياً
 
-- **Dual-YOLOv11 Detection & Tracking:** Runs fine-tuned `YOLOv11m` (`players_best.pt`) and 32-keypoint `YOLOv11m-pose` (`pitch_best.pt`) with per-class F1-calibrated thresholds loaded from [`reports/optimal_thresholds.json`](reports/optimal_thresholds.json) (`ball: 0.35`, `goalkeeper: 0.50`, `player: 0.60`, `referee: 0.45`, `nms_iou: 0.50`). Self-contained two-stage `PlayerByteTracker` (Kalman + Hungarian IoU association) and `KalmanBallTracker` with parabolic gap interpolation stabilize frame-to-frame identities.
-- **32-Keypoint RANSAC Homography:** Maps visible pitch landmarks onto canonical `105m × 68m` coordinates in [`engine/homography.py`](engine/homography.py) using RANSAC planar homography (`max_homography_reproj_m = 2.6m`) and Exponential Moving Average smoothing (`homography_ema_alpha = 0.25`).
-- **Unsupervised Team Classification:** Extracts jersey torso embeddings via `SigLIP` (`google/siglip-base-patch16-224`), reduces dimensionality with `UMAP` (falling back cleanly to `PCA`), and clusters teams via `KMeans(k=2)` with temporal majority-vote locking per `track_id`. In `cpu_quick` mode, the worker sets `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` so [`engine/team_classifier.py`](engine/team_classifier.py) bypasses network model downloads and uses its deterministic CIE `LAB` non-green jersey fallback + `PCA`.
-- **Tactical & Kinematic Analytics (`engine/tactics.py`):** Computes per-frame velocities (`km/h`, physically capped at `max_player_speed_kmh = 37.5`), sprints (`>= 24.0 km/h`), team Voronoi spatial control (`%`), outfield Convex Hull area (`m²`), virtual defensive lines (`def_x`), Karun Singh `12 × 8` Expected Threat (`XT_GRID`), `8 × 12` zonal presence heatmaps, and automated `pass` / `sprint` / `turnover` events.
-- **H.264 Broadcast Rendering (`engine/renderer.py`):** Generates browser-playable `broadcast_analyzed.mp4` and `tactical_radar.mp4` encoded via `libx264` (`-preset fast -crf 22`).
-
-<details>
-<summary>Recorded Validation Metrics (Tesla T4 — reports/metrics_report.json)</summary>
-
-| Model / Benchmark | Dataset Split / Setting | Recorded Metric |
+| محور التحقق | الأداة / السيناريو | النتيجة المُقاسة |
 | :--- | :--- | :--- |
-| **Players / Ball Detector (`YOLOv11m`)** | `imgsz=1280`, overall | **`89.76%`** `mAP@50` · **`68.24%`** `mAP@50-95` |
-| ↳ `player` class | Calibrated `conf=0.60`, `IoU=0.50` | **`99.43%`** `mAP@50` · **`0.9907`** F1 (`P=99.33%`, `R=98.81%`) |
-| ↳ `referee` class | Calibrated `conf=0.45`, `IoU=0.50` | **`98.46%`** `mAP@50` · **`0.9888`** F1 |
-| ↳ `goalkeeper` class | Calibrated `conf=0.50`, `IoU=0.50` | **`97.82%`** `mAP@50` · **`0.9630`** F1 |
-| ↳ `ball` class | Calibrated `conf=0.35`, `IoU=0.50` | **`63.33%`** `mAP@50` · **`0.7368`** F1 (`P=95.45%`, `R=60.00%`) |
-| **Pitch Landmarks (`YOLOv11m-pose`)** | 32 keypoints, validation | **`92.55%`** Pose `mAP@50` · **`86.77%`** `PCK@20px` · **`97.06%`** homography-ready frames |
+| **مجموعة الاختبارات الخلفية والمحرك** | `python -m pytest -v` (`6` ملفات اختبار) | **`45 / 45` اختباراً ناجحاً (`100%`)** — تغطي `PnLCalib 3D`، `Pass 1.5 Savitzky-Golay`، `Universal CIELAB`، فلتر الكرة، الانطلاقات، `Model 3`، `Model 4`، و`GPU Worker` |
+| **فحص الأنواع وبناء الواجهة** | `npx tsc --noEmit` + `npm run build` (`Next.js 14.2.21`) | **`0` أخطاء** — بناء إنتاجي نظيف (`/` و`/match/[id]`) |
+| **تطابق التوطين الثنائي (`i18n`)** | فحص آلي لملف [`frontend/src/lib/i18n.ts`](frontend/src/lib/i18n.ts) | **`382` مفتاحاً إنجليزياً = `382` مفتاحاً عربياً (`diff = 0`)** |
+| **كرات الزوايا وقفزات الليزر (Bundesliga `0bfacc_0` — `PnLCalib 3D`)** | مقارنة `Before` vs `After` على `750` إطاراً (`25 FPS`) | كرات الزوايا: `14 → 0` · قفزات `> 10m`: `48 → 0` · أقصى قفزة إطار واحد: **`124.61m → 1.17m`** (تشغيل Kaggle GPU الحي) |
+| **ثبات الهوموغرافي (`Pass 1.5 Savitzky-Golay`)** | `0bfacc_0` (`25 FPS`) و`match_01_counter` | اهتزاز `median_x`: `0.912 → 0.121 m/fr` (معالجة `36` إطاراً شاذاً في التشغيل الحي لـ `0bfacc_0`) |
+| **استعادة كشف الكرة بفصل `BoT-SORT`** | مقارنة تغطية الكرة على `match_01` و`Serie a goal` | ارتفعت من `52.8% → 90.67%` (Bundesliga) ومن `13.98% → 36.55%` (Serie A) |
+| **فصل الفرق عبر مباريات متنوعة (`CIELAB`)** | `4` مباريات حقيقية (`Bundesliga`, `Serie A`, `match_02`, `match_03`) | `ΔE_Lab = 38.5 – 57.89` · ثبات مسار الفريق: **`100.0%`** (دون وميض بين الإطارات) |
 
-</details>
-
-### Frontend Signal Stabilization (`frontend/src/lib/radarStabilizer.ts`)
-
-Raw single-camera homography dropouts can produce sentinel clamp coordinates at pitch boundaries (`-2.0` / `107.0` / `70.0`) or brief multi-player jumps. [`radarStabilizer.ts`](frontend/src/lib/radarStabilizer.ts) isolates the visualization layer from upstream jitter before anything reaches `<canvas>`:
-- **Glitch Frame & Sentinel Filtering:** Flags frames with `>= 2` sentinel OOB clamps (`x <= -1.4 || x >= 106.4 || y <= -1.4 || y >= 69.4`) or sudden squad-wide median displacement spikes, rejecting corrupted frames cleanly instead of pinning players or trajectory lines to pitch corners.
-- **2-Pass Kinematic Hampel Filter & Gap Bridging:** Removes isolated single-track coordinate teleports, linearly bridges short gaps (`<= 32` frames within plausible human sprint bounds), and applies a zero-phase 5-tap Gaussian kernel (`[0.10, 0.22, 0.36, 0.22, 0.10]`) strictly inside continuous segments (`breakBefore` marks true tracking discontinuities so selected-player ghost trails never stretch across gaps).
-- **Ball Stabilization & EMA Damping:** Rejects ball corner-snap artifacts and multi-meter teleports, applies 3-tap smoothing, and damps Voronoi split, defensive lines (`def_x`), and outfield hull areas (`alpha = 0.24`).
-- **60FPS Sub-Frame Interpolation & Hero Replay Selector:** `interpolateStabilizedFrame` smoothly blends positions between source frames (`25 FPS` → `60 FPS`), while `findBestHeroWindow` automatically picks the highest-tempo 7-second (`175`-frame) glitch-free sequence for the animated Match Hub Hero.
-
-### Hybrid Execution & Process Isolation (`backend/`)
-
-- **Zero-Import FastAPI Boot:** `backend/main.py` never imports `engine/`, PyTorch, or Ultralytics; heavy inference runs exclusively inside spawned [`backend/services/worker.py`](backend/services/worker.py) subprocesses.
-- **Windows-Safe Logging & PID-Tree Cancellation:** [`backend/services/job_runner.py`](backend/services/job_runner.py) routes worker `stdout`/`stderr` to file-backed logs (`backend/jobs/{job_id}.log`, avoiding Windows 4KB `PIPE` deadlocks), writes atomic `.json.tmp` → `.json` progress updates parsed from `tqdm`, and exposes `POST /api/jobs/{job_id}/cancel` to kill the full worker process tree (`taskkill /PID <pid> /T /F` on Windows / `SIGTERM` on POSIX) and clean up temporary uploads and incomplete match folders.
-- **Dual Precision & Auto-Bootstrapped FFmpeg:** Local `cpu_quick` jobs run at `det_imgsz=640` / `pitch_imgsz=512` (~4× faster on CPU), while CUDA or `remote_gpu` forwarding runs at full `1280` / `640`. On startup, the worker automatically resolves `imageio-ffmpeg` into `backend/bin/` if system `ffmpeg` is absent from `PATH`.
-
-### Interactive Analytics & Zero-Leak Localization (`frontend/`)
-
-- **Declarative `D3.js v7` Suite & High-Resolution Canvas:** Combines React SVG geometry with `d3` math (`D3PassNetworkPitch` with `12×8` xT overlay, `D3PlayerRadar`, `D3MomentumStream`, `D3ZonalControlMatrix`) alongside a `210×136` Voronoi `PitchCanvas` with crisp team-frontier seams and an inline docked zero-overlap `PlayerSpotlight` inspector.
-- **Full `EN (LTR)` / `AR (RTL)` Parity:** [`frontend/src/lib/i18n.ts`](frontend/src/lib/i18n.ts) maintains exact `319`-key parity across English and Arabic, paired with a pre-hydration inline script in [`layout.tsx`](frontend/src/app/layout.tsx) (preventing RTL flash on reload), RTL-aware range scrubbers/timelines, and `<BidiNum>` `unicode-bidi: isolate` wrappers so metrics, resolutions, and coordinates never reverse in Arabic.
+### 2) نطاق النظام والقيود الفيزيائية (`Scope & Physical Constraints`)
+- **مجال الرؤية أحادي الكاميرا (`Single-Camera Visibility`):** ترصد المنصة وتُعاير اللاعبين الظاهرين ضمن كادر البث التلفزيوني فقط؛ اللاعبون خارج إطار الكاميرا لا يمكن استنتاج مواقعهم مقارنة بأنظمة تتبع الملاعب متعددة الكاميرات.
+- **التوقف الصادق أثناء اللقطات القريبة (`hv = false`):** في لقطات الوجوه القريبة، الاحتفالات، مقاعد البدلاء، أو الإعادات المقرّبة التي تنعدم فيها معالم خطوط الملعب، يعلّق المحرك الإسقاط عمداً (`hv = false`) ويعرض ملعباً فارغاً نظيفاً في الاستوديو بدلاً من إنتاج إحداثيات مختلقة.
+- **الفارق بين تشغيل `Kaggle GPU (PnLCalib 3D)` والتشغيل المحلي `CPU`:** يوفر تشغيل `CUDA GPU` دقة `PnLCalib 3D` (57 نقطة + 23 خطاً ثلاثي الأبعاد + `PARSeq CUDA` + `BoT-SORT` عند `1280px`)، بينما يستخدم التشغيل المحلي على `CPU` مسار `yolo_pitch_fallback` (`pitch_best.pt` المحصن بـ `Law 1–4` و`Optical Flow` و`Pass 1.5`) مع `INT8 ONNX` و`RapidOCR` للعمل دون بطاقة رسوميات.
 
 ---
 
-## Project Structure
+## 9. هيكل المستودع ودليل التشغيل والإعداد
+
+### هيكل المستودع (`Repository Structure`)
+
+</div>
 
 ```text
-tactical-vision-ai/
-├── backend/                        # FastAPI API server & subprocess orchestrator
-│   ├── config.py                   # Pydantic v2 Settings (TV_ env prefix)
-│   ├── main.py                     # App entry point, CORS headers & router mounting
-│   ├── requirements.txt            # Lightweight FastAPI / httpx / Pillow dependencies
-│   ├── models/schemas.py           # MatchCard & JobStatus Pydantic contracts
-│   ├── routers/                    # matches, telemetry, video (HTTP 206), export, assets, upload
-│   └── services/                   # match_service, video_streamer, job_runner, worker
-├── engine/                         # Dual-YOLOv11 CV & tactical computation package
-│   ├── config.py                   # FIFAPitchConfig (32 kpts), XT_GRID (12x8) & EngineConfig
-│   ├── detector.py                 # Dual YOLOv11m inference (entities + 32-keypoint pose)
-│   ├── tracker.py                  # PlayerByteTracker & KalmanBallTracker
-│   ├── homography.py               # RANSAC planar homography & EMA smoothing
-│   ├── team_classifier.py          # SigLIP+UMAP+KMeans with offline LAB+PCA fallback
-│   ├── tactics.py                  # Kinematics, Voronoi, Convex Hull, xT & event detection
-│   ├── renderer.py                 # Broadcast/radar overlays & libx264 H.264 encoding
-│   └── pipeline.py                 # Two-pass match pipeline & telemetry.json writer
-├── frontend/                       # Next.js 14 App Router Studio UI
-│   ├── package.json                # Next.js 14, React 18, D3 v7, Framer Motion, Recharts
+TacticalVision-AI/
+├── engine/                           # محرك الرؤية الحاسوبية والتحليلات التكتيكية
+│   ├── config.py                     # إعدادات ملعب FIFA (105x68m)، مصفوفة xT (12x8)، وEngineConfig
+│   ├── detector.py                   # كشف YOLOv11m مع الحفاظ على 100% من الكرة الخام + BoT-SORT للأشخاص فقط
+│   ├── pnlcalib_calibrator.py        # تكامل PnLCalib 3D الرسمي (HRNetV2-w48 + PnL) مع التراجع السلس للـ CPU
+│   ├── homography.py                 # بوابات الرتابة الهندسية (Law 1–4)، التدفق البصري المقنّع، وتنعيم Pass 1.5
+│   ├── team_classifier.py            # مصنف CIELAB العام (Algorithm R + بوابة تكتيكية + 2-Stage KMeans + OOD Ref)
+│   ├── tracker.py                    # PlayerByteTracker وKalmanBallTracker
+│   ├── video_feature_extractor.py    # مستخرج ResNet-152 TF2 ONNX + PCA-512 (BGR Caffe contract)
+│   ├── action_spotter.py             # نموذج رصد الأحداث الـ 17 + Cross-Class NMS + Corroborated Goal Rescue
+│   ├── jersey_recognizer.py          # بوابة MobileNetV3 INT8 + PARSeq OCR وتصويت المسار
+│   ├── tactics.py                    # فلتر الكرة الفيزيائي، الاستحواذ، التمريرات، Voronoi، Hulls، xT، والانطلاقات
+│   ├── renderer.py                   # تصيير البث والرادار 2D (مع قاعدة قطع المسار) والترميز بـ libx264
+│   └── pipeline.py                   # المنسق الرئيسي ثلاثي المراحل (Pass 1 → Pass 1.5 → Stages 1b–3 → Pass 2)
+├── backend/                          # خادم التنسيق المحلي FastAPI (Port 8000)
+│   ├── config.py                     # إعدادات Pydantic v2 (بادئة TV_)
+│   ├── main.py                       # نقطة الدخول، CORS، وربط الموجهات الثمانية دون استيراد PyTorch
+│   ├── models/schemas.py             # عقود البيانات الصارمة (Telemetry, MatchCard, JobStatus)
+│   ├── routers/                      # matches, telemetry, video (HTTP 206), export, assets, upload, models_suite, action_spotting
+│   └── services/                     # job_runner (Windows-safe RLock), remote_gpu_client, worker, match_service, video_streamer
+├── gpu_worker/                       # خادم المعالجة السحابية المستقل لـ Kaggle / Colab (Port 8001)
+│   └── server.py                     # نقاط /health (مع pnlcalib_ready) و/analyze و/status و/bundle و/cancel
+├── frontend/                         # استوديو الويب التفاعلي Next.js 14 + TypeScript + D3.js v7 (Port 3000)
 │   └── src/
-│       ├── app/                    # Match Hub (/), War Room & Telemetry Lab (/match/[id])
-│       ├── components/             # PitchCanvas, VideoPlayer, PlayerSpotlight, UploadModal, d3/
-│       ├── context/LangContext.tsx # Persistent EN/AR locale & document dir manager
-│       ├── hooks/                  # useJobPolling, useMatchData
-│       └── lib/                    # api.ts, i18n.ts, radarStabilizer.ts, telemetryHelpers.ts, types.ts
-├── docs/screenshots/               # Optional UI screenshot captures for README gallery
-├── models/                         # (Git-ignored) Place players_best.pt & pitch_best.pt here
-├── outputs/                        # Tracked sample match telemetry/snapshots (MP4s & user_* Git-ignored)
-│   ├── match_01_counter/
-│   ├── match_02_buildup/
-│   └── match_03_press/
-├── reports/                        # Calibrated thresholds, recorded metrics & training plots
-│   ├── optimal_thresholds.json
-│   └── metrics_report.json
-├── .gitignore                      # Ignores .pt/.onnx weights, .mp4 videos, ffmpeg.exe, .env & caches
-└── README.md
+│       ├── app/                      # Match Hub (/) وWar Room + Analytics Lab (/match/[id])
+│       ├── components/               # PitchCanvas, drawPlayers, VideoPlayer, PlayerSpotlight, CoachBrief, UploadModal, d3/
+│       └── lib/                      # api.ts, i18n.ts (382/382), radarStabilizer.ts, jerseyOverrides.ts, coachBriefEngine.ts, types.ts
+├── docs/                             # التوثيق الفني، نوتبوك Kaggle، والأصول البصرية
+│   ├── kaggle_gpu_worker.ipynb       # نوتبوك Kaggle الجاهز (تثبيت تلقائي لـ PnLCalib 3D + SV_kp/SV_lines + Cloudflare Tunnel)
+│   ├── MODELS.md                     # بطاقات النماذج العلمية ومقاييس ONNX INT8 التفصيلية
+│   └── assets/                       # لقطات عرض خفيفة بصيغة WebP (< 70 KB لكل صورة)
+├── artifacts/models_meta/            # سجل النماذج، العتبات المعايرة، وتقارير المقاييس
+├── outputs/match_0*/                 # عينات تليميتري جاهزة للاستعراض الفوري دون أوزان
+└── tests/                            # 45 اختباراً آلياً شاملاً (pytest)
 ```
 
----
+<div dir="rtl">
 
-## Getting Started
+### متغيرات البيئة والإعدادات (`Configuration & Environment Variables`)
 
-### Prerequisites
+| المتغير | النطاق | القيمة الافتراضية | الوظيفة |
+| :--- | :--- | :--- | :--- |
+| `TV_FRONTEND_ORIGIN` | Backend (`.env`) | `http://localhost:3000` | مصدر `CORS` المسموح به لطلبات المتصفح. |
+| `TV_REMOTE_GPU_WORKER_URL` / `REMOTE_GPU_URL` | Backend (`.env`) | `""` (معطّل) | رابط عامل `Kaggle GPU` الافتراضي عند تفعيل وضع `remote_gpu`. |
+| `TV_CPU_QUICK_MAX_SECONDS` | Backend (`.env`) | `0.0` (`Full Video`) | الحد الافتراضي للمدة بالثواني (`0.0` = تحليل الفيديو كاملاً دون اقتطاع). |
+| `TV_CPU_QUICK_MAX_SECONDS_LIMIT` | Backend (`.env`) | `600.0` | السقف الأقصى للمدة بالثواني في وضع `cpu_quick`. |
+| `TV_SUBPROCESS_TIMEOUT_S` | Backend (`.env`) | `3600` | مهلة تشغيل عملية التحليل الفرعية بالثواني. |
+| `MODELS_DIR` | GPU Worker / Local | `./models` | مسار مجلد الأوزان الأساسية (يدعم `/kaggle/input/...` للقراءة فقط). |
+| `PNLCALIB_REPO_DIR` | GPU Worker / Engine | `/kaggle/working/PnLCalib` | مسار مستودع `mguti97/PnLCalib` المستنسخ لتشغيل `PnLCalib 3D`. |
+| `PNLCALIB_WEIGHTS_DIR` | GPU Worker / Engine | `/kaggle/working/pnlcalib_weights` | مسار أوزان `SV_kp` و`SV_lines` المخبّأة. |
+| `GPU_WORK_DIR` | GPU Worker | `tempdir/tacticalvision_gpu_jobs` | مجلد العمل المؤقت للرفع وحزم `bundle.zip`. |
+| `NEXT_PUBLIC_API_URL` | Frontend (`.env.local`) | `http://localhost:8000` | عنوان خادم `FastAPI` المستخدم في عميل الواجهة (`api.ts`). |
 
-- **Python:** `3.10+`
-- **Node.js:** `18+` with `npm`
-- **Model Weights (only needed to analyze new uploaded videos):**
-  Place trained weights in root `models/` (Git-ignored):
-  - `models/players_best.pt` — fine-tuned `YOLOv11m` detector (`ball`, `goalkeeper`, `player`, `referee`)
-  - `models/pitch_best.pt` — fine-tuned `YOLOv11m-pose` 32-keypoint pitch detector
-  - Calibrated thresholds are already tracked at [`reports/optimal_thresholds.json`](reports/optimal_thresholds.json).
+### دليل التشغيل السريع (`Quick Start`)
 
-> **Zero-Setup Sample Exploration:** Light sample `telemetry.json` and `preview_snapshot.png` files for `match_01_counter`, `match_02_buildup`, and `match_03_press` are tracked in `outputs/`. You can launch the API + Frontend in **Viewer/API Mode** right away to explore the animated Match Hub Hero, 60FPS 2D Radar, Player Spotlight, and D3 Lab without installing PyTorch or downloading `.pt` weights. Rendered `.mp4` videos are Git-ignored; upload a clip via **Analyze Match** (with weights installed) or place `.mp4` files inside `outputs/<match_id>/` to enable `<video>` playback.
+#### 1) تشغيل الخادم المحلي (`FastAPI`) والواجهة (`Next.js`)
 
-### Backend Setup
-
-Run all commands from the repository root (`tactical-vision-ai/`):
+</div>
 
 ```bash
+# 1. استنساخ المستودع وتجهيز البيئة الافتراضية
+git clone https://github.com/Mazenalodini/TacticalVision-AI.git
+cd TacticalVision-AI
 python -m venv .venv
 # Windows PowerShell: .\.venv\Scripts\Activate.ps1
 # Linux / macOS:      source .venv/bin/activate
-```
 
-**Option A — Viewer / API Mode (explore tracked telemetry, D3 charts & exports):**
-
-```bash
+# 2. تثبيت اعتماديات الخادم وتشغيل FastAPI (Port 8000)
 pip install -r backend/requirements.txt
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# لتفعيل التحليل المحلي على CPU أضف أيضاً:
+# pip install torch torchvision ultralytics opencv-python-headless scikit-learn scipy imageio-ffmpeg onnxruntime rapidocr-onnxruntime
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Option B — Full Local CPU Analysis Mode (enables Upload & Analyze + H.264 rendering):**
-
 ```bash
-pip install -r backend/requirements.txt
-# Use the CUDA wheel from pytorch.org instead of /whl/cpu if you have an NVIDIA GPU
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install ultralytics opencv-python-headless scikit-learn scipy imageio-ffmpeg
-
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
-
-Verify the server at `http://localhost:8000/api/health`.
-
-### Configuration (`.env`)
-
-Backend settings are loaded via Pydantic v2 with prefix `TV_` ([`backend/config.py`](backend/config.py)); the frontend reads `frontend/.env.local` (all `.env*` files are Git-ignored):
-
-| Variable | File | Default | Purpose |
-| :--- | :--- | :--- | :--- |
-| `TV_FRONTEND_ORIGIN` | Root `.env` | `http://localhost:3000` | Allowed CORS origin for browser requests. |
-| `TV_REMOTE_GPU_WORKER_URL` | Root `.env` | `""` (disabled) | Default target URL when offloading `remote_gpu` jobs. |
-| `TV_CPU_QUICK_MIN_SECONDS` | Root `.env` | `2.0` | Minimum allowed clip duration (`s`) for CPU Quick-Scan. |
-| `TV_CPU_QUICK_MAX_SECONDS` | Root `.env` | `3.0` | Default clip duration (`s`) for CPU Quick-Scan. |
-| `TV_CPU_QUICK_MAX_SECONDS_LIMIT` | Root `.env` | `15.0` | Upper clamp (`s`) enforced by `job_runner.py`. |
-| `TV_SUBPROCESS_TIMEOUT_S` | Root `.env` | `900` | Configured worker subprocess timeout budget (`s`). |
-| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | `http://localhost:8000` | Base FastAPI URL used by the Next.js client (`api.ts`). |
-
-### Frontend Setup
-
-```bash
+# 3. في نافذة طرفية ثانية — تثبيت وتشغيل الواجهة (Port 3000)
 cd frontend
 npm install
-
-# Create frontend/.env.local if FastAPI runs on a custom host/port:
-# NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# Development server (http://localhost:3000)
-npm run dev
-
-# Or production build & server
 npm run build
 npm run start
 ```
 
----
+<div dir="rtl">
 
-## REST API Reference
+> افتح **`http://localhost:3000`** لاستعراض العينات المتتبَّعة (`match_01_counter`, `match_02_buildup`, `match_03_press`) مباشرة، أو ارفع أي مقطع جديد عبر **Analyze Match**.
 
-| Method | Endpoint | Purpose | Implementation Notes |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/health` | Service health check | Returns `{"status": "ok", "service": "TacticalVision AI"}`. |
-| `GET` | `/api/matches` | List discovered matches | Combines `outputs/` metadata for demo & user uploads. |
-| `GET` | `/api/matches/{match_id}` | Single match summary | Returns `404` if directory/telemetry missing. |
-| `GET` | `/api/matches/{match_id}/telemetry` | Stream full `telemetry.json` | Served directly via `FileResponse` (zero Pydantic re-serialization). |
-| `GET` | `/api/matches/{match_id}/video/{video_type}` | Stream rendered MP4 video | `video_type` ∈ `{broadcast, radar}`; supports `HTTP 206 Partial Content` seeking. |
-| `GET` | `/api/matches/{match_id}/thumbnail` | Match Hub card thumbnail | Lazily crops left 16:9 frame from `preview_snapshot.png` to `640×360` JPEG (`_thumb_640.jpg`, cached). |
-| `GET` | `/api/matches/{match_id}/export` | Download match telemetry | Query params `format=csv\|json` & `scope=players\|events` with `Content-Disposition`. |
-| `POST` | `/api/matches/analyze` | Upload & analyze clip | Multipart `file` (`.mp4/.mov/.mkv`, `≤ 250 MB`), `mode=cpu_quick\|remote_gpu`, `max_seconds`, optional `remote_gpu_url`; returns `202` + `job_id`. |
-| `GET` | `/api/jobs/{job_id}` | Poll live job progress | Returns `JobStatus` (`status`, `progress_pct`, `stage_label`, `elapsed_s`, `match_id`, `pid`). |
-| `POST` | `/api/jobs/{job_id}/cancel` | Cancel running analysis | Terminates worker process tree (`PID`), marks `cancelled`, deletes temp upload & incomplete output dir. |
-| `DELETE` | `/api/matches/{match_id}` | Delete user upload | Protected against deleting core `match_0*` demos (`403`). |
+#### 2) تشغيل عامل المعالجة السحابي `Kaggle GPU Worker` (`PnLCalib 3D` — 3 خطوات)
 
----
+1. ارفع الملف [`docs/kaggle_gpu_worker.ipynb`](docs/kaggle_gpu_worker.ipynb) إلى **Kaggle** مع تفعيل **Accelerator: `GPU T4 x2` أو `P100`**، تفعيل **Internet: `ON`**، وإرفاق Dataset الأوزان الأساسية (`tacticalvision-models`).
+2. شغّل **الخلية 1 → الخلية 2 → الخلية 3** بالترتيب؛ ستقوم الخلية 1 تلقائياً بسحب فرع `main` عبر `FETCH_HEAD`، واستنساخ `mguti97/PnLCalib`، وتحميل أوزان `SV_kp` و`SV_lines` الرسمية وتخزينها، وستطبع الخلية 3 جاهزية `/health` مؤكِّدةً:
+   ```json
+   { "calibrator_backend": "pnlcalib_3d", "pnlcalib_ready": true }
+   ```
+3. انسخ رابط `https://xxxx.trycloudflare.com` المطبوع في الخلية 3 والصقه داخل **Analyze Match → Remote GPU (Kaggle / Colab)** في الاستوديو المحلي ثم اضغط **Test Connection** وابدأ التحليل.
 
-## Status, Roadmap & Author
+#### 3) أوامر التحقق والاختبار الآلي
 
-### Current Status
+</div>
 
-Stable on `main`:
-- End-to-end dual-YOLOv11 + ByteTrack + 32-keypoint homography CV pipeline (`engine/`).
-- Isolated FastAPI subprocess backend with HTTP 206 streaming, remote GPU forwarding, and PID-tree job cancellation (`backend/`).
-- Next.js 14 studio with signal-stabilized 60FPS `PitchCanvas`, animated real-data Hero showcase, docked `PlayerSpotlight`, declarative `D3.js v7` suite, and full `EN (LTR)` / `AR (RTL)` localization (`frontend/`).
+```bash
+# تشغيل مجموعة الاختبارات الكاملة (45 اختباراً)
+python -m pytest -v
 
-### Roadmap
+# فحص أنواع TypeScript وبناء Next.js الإنتاجي
+cd frontend
+npx tsc --noEmit
+npm run build
+```
 
-- **Remote GPU Worker Packaging:** Dedicated Dockerfile & FastAPI worker preset for one-click cloud GPU (`T4`/`L4`) offloading.
-- **Multi-Clip Match Stitching:** Merge segmented broadcast halves/highlights into a unified continuous timeline and cumulative player report.
-- **Team Branding & Lineup Tagging:** Map anonymous ByteTrack IDs and `Team A` / `Team B` labels to club names, crest colors, and squad shirt numbers.
+<div dir="rtl">
 
 ---
 
-<div align="center">
+## 10. المراجع العلمية، التراخيص، والمؤلف
 
-Built by **Mazen Mohammed Alodini** ([@Mazenalodini](https://github.com/Mazenalodini)) · [github.com/Mazenalodini/TacticalVision-AI](https://github.com/Mazenalodini/TacticalVision-AI)
+### المراجع والأعمال العلمية المعتمدة (`Scientific References & Credits`)
+- **PnLCalib (3D Broadcast Sports Field Calibration):** Marc Gutiérrez-Pérez & Antonio Agudo, *"PnLCalib: Sports Field Registration via Points and Lines Optimization"*, Computer Vision and Image Understanding (CVIU), 2026 ([`mguti97/PnLCalib`](https://github.com/mguti97/PnLCalib)).
+- **SoccerNet Benchmarks (Action Spotting, Tracking, Calibration & Jersey Recognition):** Giancola et al. / Cioppa et al., *SoccerNet-v2 & Game State Reconstruction* ([`SoccerNet`](https://www.soccer-net.org/)).
+- **BoT-SORT:** Nir Aharon, Roy Orfaig, Ben-Zion Bobrovsky, *"BoT-SORT: Robust Associations Multi-Pedestrian Tracking"* (2022).
+- **PARSeq OCR:** Darwin Bautista & Rowel Atienza, *"Scene Text Recognition with Permuted Autoregressive Sequence Models"*, ECCV 2022.
+- **Ultralytics YOLOv11:** Ultralytics Object Detection & Pose Estimation Framework ([`ultralytics/ultralytics`](https://github.com/ultralytics/ultralytics)).
+- **Expected Threat (`xT`):** Karun Singh, *"Introducing Expected Threat (xT)"* (`12 × 8` pitch threat grid).
+
+### المؤلف والتطوير (`Author`)
+
+**المهندس مازن محمد عبد العزيز العديني — Eng. Mazen Alodini**  
+GitHub: [https://github.com/Mazenalodini](https://github.com/Mazenalodini) · Repository: [TacticalVision-AI](https://github.com/Mazenalodini/TacticalVision-AI)
+
+> **التراخيص:** يتكامل المشروع مع مكونات مفتوحة المصدر تخضع كلٌّ منها لترخيصها الأصلي (`MIT` / `Apache-2.0` / `AGPL-3.0` لـ Ultralytics).
 
 </div>
